@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "frontend.name" . }}
+  namespace: {{ .Values.app.namespace }}
+  labels:
+    {{- include "frontend.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.app.replicas }}
+  selector:
+    matchLabels:
+      {{- include "frontend.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "frontend.labels" . | nindent 8 }}
+      annotations:
+        instrumentation.opentelemetry.io/inject-java: "false"
+        instrumentation.opentelemetry.io/inject-nodejs: "false"
+        instrumentation.opentelemetry.io/inject-python: "false"
+        instrumentation.opentelemetry.io/inject-dotnet: "false"
+    spec:
+      nodeSelector:
+        {{- toYaml .Values.app.nodeSelector | nindent 8 }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              {{- include "frontend.selectorLabels" . | nindent 14 }}
+      securityContext:
+        {{- include "frontend.podSecurityContext" . | nindent 8 }}
+      containers:
+      - name: {{ include "frontend.name" . }}
+        image: "{{ include "frontend.image" . }}"
+        imagePullPolicy: {{ .Values.app.image.pullPolicy }}
+        securityContext:
+          {{- include "frontend.containerSecurityContext" . | nindent 10 }}
+        ports:
+        - containerPort: {{ .Values.service.targetPort }}
+          name: http
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 5

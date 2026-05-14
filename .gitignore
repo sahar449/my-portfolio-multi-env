@@ -1,7 +1,20 @@
+# Secrets
 .env
 .env.*
+*.tfvars
+*.pem
+*.key
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+
+# Python
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Logs & OS
 *.log
 .DS_Store
