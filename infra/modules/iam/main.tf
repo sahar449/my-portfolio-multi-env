@@ -11,8 +11,8 @@ resource "aws_iam_policy" "lb_controller_policy" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect = "Allow"
-        Action = ["iam:CreateServiceLinkedRole"]
+        Effect   = "Allow"
+        Action   = ["iam:CreateServiceLinkedRole"]
         Resource = "*"
         Condition = {
           StringEquals = {
@@ -87,13 +87,13 @@ resource "aws_iam_policy" "lb_controller_policy" {
         Resource = "*"
       },
       {
-        Effect = "Allow"
-        Action = ["ec2:CreateSecurityGroup"]
+        Effect   = "Allow"
+        Action   = ["ec2:CreateSecurityGroup"]
         Resource = "*"
       },
       {
-        Effect = "Allow"
-        Action = ["ec2:CreateTags"]
+        Effect   = "Allow"
+        Action   = ["ec2:CreateTags"]
         Resource = "arn:aws:ec2:*:*:security-group/*"
         Condition = {
           StringEquals = {
@@ -105,12 +105,12 @@ resource "aws_iam_policy" "lb_controller_policy" {
         }
       },
       {
-        Effect = "Allow"
-        Action = ["ec2:CreateTags","ec2:DeleteTags"]
+        Effect   = "Allow"
+        Action   = ["ec2:CreateTags", "ec2:DeleteTags"]
         Resource = "arn:aws:ec2:*:*:security-group/*"
         Condition = {
           Null = {
-            "aws:RequestTag/elbv2.k8s.aws/cluster" = "true"
+            "aws:RequestTag/elbv2.k8s.aws/cluster"  = "true"
             "aws:ResourceTag/elbv2.k8s.aws/cluster" = "false"
           }
         }
@@ -165,7 +165,7 @@ resource "aws_iam_policy" "lb_controller_policy" {
         ]
         Condition = {
           Null = {
-            "aws:RequestTag/elbv2.k8s.aws/cluster" = "true"
+            "aws:RequestTag/elbv2.k8s.aws/cluster"  = "true"
             "aws:ResourceTag/elbv2.k8s.aws/cluster" = "false"
           }
         }
@@ -309,7 +309,7 @@ resource "aws_iam_role_policy_attachment" "lb_controller_attach" {
 resource "aws_iam_policy" "external_dns_policy" {
   name        = "ExternalDNSIAMPolicy"
   description = "IAM policy for External DNS to manage Route53 records"
-  
+
   policy = jsonencode({
     Version = "2012-10-17",
     Statement = [
@@ -378,8 +378,8 @@ resource "aws_iam_policy" "flask_app_secrets_policy" {
         Resource = "*"
       },
       {
-        Effect = "Allow"
-        Action = ["kms:Decrypt"]
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
         Resource = "*"
       }
     ]
@@ -394,13 +394,13 @@ data "aws_iam_policy_document" "flask_app_assume_role" {
       identifiers = [var.oidc_provider_arn]
     }
     actions = ["sts:AssumeRoleWithWebIdentity"]
-    
+
     condition {
       test     = "StringEquals"
       variable = "${replace(var.oidc_provider_url, "https://", "")}:sub"
       values   = ["system:serviceaccount:default:flask-app-sa"]
     }
-    
+
     condition {
       test     = "StringEquals"
       variable = "${replace(var.oidc_provider_url, "https://", "")}:aud"

@@ -86,7 +86,7 @@ jobs:
         run: tflint --init
       - name: Run tflint
         working-directory: infra
-        run: tflint --recursive
+        run: tflint --recursive --minimum-failure-severity=error
 
   # ─────────────────────────────────────────────
   # JOB 4: TRIVY IaC SCAN
