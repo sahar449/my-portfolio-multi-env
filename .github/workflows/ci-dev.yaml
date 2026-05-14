@@ -8,77 +8,125 @@ on:
     paths:
       - 'services/**'
 
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-west-2
+  IMAGE_TAG: ${{ github.sha }}
+
 jobs:
-  secret-scan:
-    name: Secret Scan
+  trivy-scan-frontend:
+    name: Trivy Scan Frontend
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Trivy — scan files
-        uses: aquasecurity/trivy-action@master
+      - uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
-          scan-ref: .
-          scanners: secret
-          severity: HIGH,CRITICAL
+          scan-ref: ./services/frontend
+          scanners: vuln,secret,config
+          format: table
+          severity: CRITICAL,HIGH,MEDIUM
           exit-code: '1'
 
-  lint-frontend:
-    name: Lint Frontend
+  trivy-scan-backend:
+    name: Trivy Scan Backend
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: aquasecurity/trivy-action@master
         with:
-          python-version: '3.11'
-      - run: pip install flake8
-      - working-directory: services/frontend
-        run: flake8 . --max-line-length=100 --exclude=__pycache__
-
-  lint-backend:
-    name: Lint Backend
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - run: pip install flake8
-      - working-directory: services/backend
-        run: flake8 . --max-line-length=100 --exclude=__pycache__
+          scan-type: fs
+          scan-ref: ./services/backend
+          scanners: vuln,secret,config
+          format: table
+          severity: CRITICAL,HIGH,MEDIUM
+          exit-code: '1'
 
   build-frontend:
-    name: Build & Scan Frontend
+    name: Build & Push Frontend
     runs-on: ubuntu-latest
-    needs: [secret-scan, lint-frontend]
+    needs: trivy-scan-frontend
     steps:
       - uses: actions/checkout@v4
-      - name: Build image
-        run: docker build -t frontend:${{ github.sha }} services/frontend
-      - name: Trivy — scan image
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-frontend
+
+      - uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: docker/build-push-action@v4
+        with:
+          context: ./services/frontend
+          push: true
+          tags: |
+            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend:${{ env.IMAGE_TAG }}
+            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend:latest
+
+      - name: Trivy image scan
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: image
-          image-ref: frontend:${{ github.sha }}
+          image-ref: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend:${{ env.IMAGE_TAG }}
           scanners: vuln
-          severity: HIGH,CRITICAL
+          severity: CRITICAL,HIGH,MEDIUM
           exit-code: '1'
 
+      - name: Smoke test frontend
+        run: |
+          docker run -d --name test-frontend -p 5000:5000 \
+            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend:${{ env.IMAGE_TAG }}
+          for i in $(seq 1 15); do
+            curl -sf http://localhost:5000/health && break
+            [ "$i" -eq 15 ] && docker logs test-frontend && exit 1
+            sleep 2
+          done
+          docker rm -f test-frontend
+
   build-backend:
-    name: Build & Scan Backend
+    name: Build & Push Backend
     runs-on: ubuntu-latest
-    needs: [secret-scan, lint-backend]
+    needs: trivy-scan-backend
     steps:
       - uses: actions/checkout@v4
-      - name: Build image
-        run: docker build -t backend:${{ github.sha }} services/backend
-      - name: Trivy — scan image
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-backend
+
+      - uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: docker/build-push-action@v4
+        with:
+          context: ./services/backend
+          push: true
+          tags: |
+            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend:${{ env.IMAGE_TAG }}
+            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend:latest
+
+      - name: Trivy image scan
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: image
-          image-ref: backend:${{ github.sha }}
+          image-ref: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend:${{ env.IMAGE_TAG }}
           scanners: vuln
-          severity: HIGH,CRITICAL
+          severity: CRITICAL,HIGH,MEDIUM
           exit-code: '1'
+
+      - name: Smoke test backend
+        run: |
+          docker run -d --name test-backend -p 5002:5002 \
+            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend:${{ env.IMAGE_TAG }}
+          for i in $(seq 1 15); do
+            curl -sf http://localhost:5002/health && break
+            [ "$i" -eq 15 ] && docker logs test-backend && exit 1
+            sleep 2
+          done
+          docker rm -f test-backend
