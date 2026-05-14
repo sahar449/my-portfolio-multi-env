@@ -1,0 +1,109 @@
+name: CI Staging
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'services/**'
+
+jobs:
+  secret-scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Trivy — scan files
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: secret
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+
+  lint-frontend:
+    name: Lint Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install flake8
+      - working-directory: services/frontend
+        run: flake8 . --max-line-length=100 --exclude=__pycache__
+
+  lint-backend:
+    name: Lint Backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install flake8
+      - working-directory: services/backend
+        run: flake8 . --max-line-length=100 --exclude=__pycache__
+
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: python
+      - uses: github/codeql-action/analyze@v3
+
+  build-frontend:
+    name: Build & Scan Frontend
+    runs-on: ubuntu-latest
+    needs: [secret-scan, lint-frontend, codeql]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t frontend:${{ github.sha }} services/frontend
+      - name: Trivy — scan image
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: image
+          image-ref: frontend:${{ github.sha }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+      - name: Smoke test frontend
+        run: |
+          docker run -d --name frontend-test -p 5000:5000 frontend:${{ github.sha }}
+          sleep 5
+          curl -sf http://localhost:5000/health || (docker logs frontend-test && exit 1)
+          docker rm -f frontend-test
+
+  build-backend:
+    name: Build & Scan Backend
+    runs-on: ubuntu-latest
+    needs: [secret-scan, lint-backend, codeql]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t backend:${{ github.sha }} services/backend
+      - name: Trivy — scan image
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: image
+          image-ref: backend:${{ github.sha }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+      - name: Smoke test backend
+        run: |
+          docker run -d --name backend-test -p 5002:5002 backend:${{ github.sha }}
+          sleep 5
+          curl -sf http://localhost:5002/health || (docker logs backend-test && exit 1)
+          docker rm -f backend-test

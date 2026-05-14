@@ -1,0 +1,25 @@
+name: CD Staging
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'services/**'
+
+jobs:
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      # Replace with real steps when EKS is ready:
+      # - name: Configure AWS credentials
+      #   uses: aws-actions/configure-aws-credentials@v4
+      # - name: Login to ECR + push images
+      # - name: kubectl apply to staging cluster
+
+      - name: Deploy to staging
+        run: echo "Deploying frontend+backend ${{ github.sha }} to staging"

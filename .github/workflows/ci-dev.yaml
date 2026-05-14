@@ -1,0 +1,84 @@
+name: CI Dev
+
+on:
+  push:
+    branches:
+      - dev
+      - 'feature/**'
+    paths:
+      - 'services/**'
+
+jobs:
+  secret-scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Trivy — scan files
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: secret
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+
+  lint-frontend:
+    name: Lint Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install flake8
+      - working-directory: services/frontend
+        run: flake8 . --max-line-length=100 --exclude=__pycache__
+
+  lint-backend:
+    name: Lint Backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install flake8
+      - working-directory: services/backend
+        run: flake8 . --max-line-length=100 --exclude=__pycache__
+
+  build-frontend:
+    name: Build & Scan Frontend
+    runs-on: ubuntu-latest
+    needs: [secret-scan, lint-frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t frontend:${{ github.sha }} services/frontend
+      - name: Trivy — scan image
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: image
+          image-ref: frontend:${{ github.sha }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+
+  build-backend:
+    name: Build & Scan Backend
+    runs-on: ubuntu-latest
+    needs: [secret-scan, lint-backend]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t backend:${{ github.sha }} services/backend
+      - name: Trivy — scan image
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: image
+          image-ref: backend:${{ github.sha }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          exit-code: '1'
