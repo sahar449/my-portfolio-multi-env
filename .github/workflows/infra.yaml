@@ -24,6 +24,7 @@ on:
 permissions:
   id-token: write
   contents: read
+  actions: write
 
 env:
   AWS_REGION: us-west-2
@@ -192,6 +193,17 @@ jobs:
         if: failure()
         run: terraform destroy -auto-approve
         working-directory: infra/envs/${{ github.event.inputs.environment }}
+
+      - name: Trigger CI pipeline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ENV="${{ github.event.inputs.environment }}"
+          if [ "$ENV" = "dev" ]; then
+            gh workflow run dev-ci.yaml --ref dev
+          elif [ "$ENV" = "staging" ]; then
+            gh workflow run staging-ci.yaml --ref staging
+          fi
 
   destroy:
     name: Terraform Destroy
