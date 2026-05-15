@@ -243,13 +243,9 @@ jobs:
         run: terraform destroy -auto-approve
         working-directory: infra
 
-      - name: Delete DynamoDB lock table
+      - name: Cleanup state backend
         if: success()
         run: |
           aws dynamodb delete-table --table-name ${{ env.TF_LOCK_TABLE }} || true
-
-      - name: Delete S3 state bucket
-        if: success()
-        run: |
           aws s3 rm s3://${{ env.TF_STATE_BUCKET }} --recursive || true
           aws s3api delete-bucket --bucket ${{ env.TF_STATE_BUCKET }} || true
