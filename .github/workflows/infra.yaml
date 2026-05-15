@@ -11,6 +11,15 @@ on:
         options:
           - apply
           - destroy
+      environment:
+        description: "Choose environment"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
 
 permissions:
   id-token: write
@@ -37,7 +46,7 @@ jobs:
         with:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
       - name: terraform fmt
-        working-directory: infra
+        working-directory: infra/envs/${{ github.event.inputs.environment }}
         run: terraform fmt -check -recursive
 
   # ─────────────────────────────────────────────
@@ -60,10 +69,10 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: github-actions-validate
       - name: terraform init
-        working-directory: infra
+        working-directory: infra/envs/${{ github.event.inputs.environment }}
         run: terraform init -upgrade
       - name: terraform validate
-        working-directory: infra
+        working-directory: infra/envs/${{ github.event.inputs.environment }}
         run: terraform validate
 
   # ─────────────────────────────────────────────
@@ -85,11 +94,11 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: github-actions-tflint
       - name: Init tflint with AWS plugin
-        working-directory: infra
-        run: tflint --init
+        working-directory: infra/envs/${{ github.event.inputs.environment }}
+        run: tflint --init --config ../../.tflint.hcl
       - name: Run tflint
-        working-directory: infra
-        run: tflint --recursive --minimum-failure-severity=error
+        working-directory: infra/envs/${{ github.event.inputs.environment }}
+        run: tflint --minimum-failure-severity=error --config ../../.tflint.hcl
 
   # ─────────────────────────────────────────────
   # JOB 4: TRIVY IaC SCAN
@@ -103,7 +112,7 @@ jobs:
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: config
-          scan-ref: infra/
+          scan-ref: infra/envs/${{ github.event.inputs.environment }}/
           scanners: config,secret
           format: table
           severity: CRITICAL,HIGH,MEDIUM
@@ -173,16 +182,16 @@ jobs:
 
       - name: Terraform Init
         run: terraform init -upgrade
-        working-directory: infra
+        working-directory: infra/envs/${{ github.event.inputs.environment }}
 
       - name: Terraform Apply
         run: terraform apply -auto-approve
-        working-directory: infra
+        working-directory: infra/envs/${{ github.event.inputs.environment }}
 
       - name: Destroy on failure
         if: failure()
         run: terraform destroy -auto-approve
-        working-directory: infra
+        working-directory: infra/envs/${{ github.event.inputs.environment }}
 
   destroy:
     name: Terraform Destroy
@@ -237,11 +246,11 @@ jobs:
 
       - name: Terraform Init
         run: terraform init -upgrade
-        working-directory: infra
+        working-directory: infra/envs/${{ github.event.inputs.environment }}
 
       - name: Terraform Destroy
         run: terraform destroy -auto-approve
-        working-directory: infra
+        working-directory: infra/envs/${{ github.event.inputs.environment }}
 
       - name: Cleanup state backend
         if: success()
