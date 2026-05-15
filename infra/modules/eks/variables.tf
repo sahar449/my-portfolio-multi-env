@@ -11,5 +11,3 @@ variable "public_subnet_ids" {
 }
 
 variable "cluster_name" {}
-
-variable "acm_cert_arn" {}

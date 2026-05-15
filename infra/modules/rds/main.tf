@@ -115,12 +115,3 @@ resource "aws_secretsmanager_secret_version" "rds_credentials_final" {
 
   depends_on = [aws_db_instance.mysql]
 }
-
-# ----------------------------
-# Data Source for Reading Secret
-# ----------------------------
-data "aws_secretsmanager_secret_version" "rds_credentials" {
-  secret_id = aws_secretsmanager_secret.rds_credentials.id
-
-  depends_on = [aws_secretsmanager_secret_version.rds_credentials_final]
-}
