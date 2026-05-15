@@ -20,7 +20,6 @@ env:
   AWS_REGION: us-west-2
   TERRAFORM_VERSION: 1.5.7
   VPC_NAME: eksdemo-vpc
-  TF_VAR_DB_PASS: ${{ secrets.DB_PASS }}
 
 jobs:
   # ─────────────────────────────────────────────
