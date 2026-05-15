@@ -47,6 +47,8 @@ jobs:
   validate:
     name: Terraform Validate
     runs-on: ubuntu-latest
+    needs: [bootstrap]
+    if: always()
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v2
@@ -59,7 +61,7 @@ jobs:
           role-session-name: github-actions-validate
       - name: terraform init
         working-directory: infra
-        run: terraform init -backend=false
+        run: terraform init -upgrade
       - name: terraform validate
         working-directory: infra
         run: terraform validate
@@ -109,12 +111,12 @@ jobs:
 
   # ─────────────────────────────────────────────
   # JOB 5: BOOTSTRAP — create S3 bucket + DynamoDB
-  # runs once before apply, skipped on destroy
+  # runs first on apply so validate can use real backend
+  # skipped on destroy (bucket already exists)
   # ─────────────────────────────────────────────
   bootstrap:
     name: Bootstrap State Backend
     runs-on: ubuntu-latest
-    needs: [fmt, validate, tflint, trivy-scan]
     if: ${{ github.event.inputs.action == 'apply' }}
     steps:
       - uses: aws-actions/configure-aws-credentials@v4
