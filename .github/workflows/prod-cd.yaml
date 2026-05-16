@@ -34,6 +34,22 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: github-actions-cd-prod
 
+      # ── Promote images from staging ECR to prod ECR ──────────────────────
+      - uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Promote images staging → prod
+        env:
+          ECR: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          for service in frontend backend; do
+            docker pull  ${ECR}/${service}-staging:latest
+            docker tag   ${ECR}/${service}-staging:latest ${ECR}/${service}-prod:${IMAGE_TAG}
+            docker tag   ${ECR}/${service}-staging:latest ${ECR}/${service}-prod:latest
+            docker push  ${ECR}/${service}-prod:${IMAGE_TAG}
+            docker push  ${ECR}/${service}-prod:latest
+          done
+
       # ── Connect to mgmt cluster (where ArgoCD lives) ──────────────────────
       - name: Connect to mgmt cluster
         run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.MGMT_CLUSTER }}
@@ -88,9 +104,9 @@ jobs:
       # ── Update image tag in Git ────────────────────────────────────────────
       - name: Update image tag in Git
         run: |
-          IMAGE_TAG="${{ github.event.workflow_run.head_sha }}"
-          ECR_FRONTEND="${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend"
-          ECR_BACKEND="${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend"
+          IMAGE_TAG="${{ github.sha }}"
+          ECR_FRONTEND="${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend-prod"
+          ECR_BACKEND="${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend-prod"
 
           wget -qO /usr/local/bin/yq \
             https://github.com/mikefarah/yq/releases/download/v4.44.1/yq_linux_amd64
