@@ -95,9 +95,10 @@ jobs:
 
           TARGET_CONTEXT=$(kubectl config current-context)
 
-          argocd cluster add "$TARGET_CONTEXT" \
-            --name ${{ env.TARGET_CLUSTER }} \
-            --yes
+          argocd cluster get ${{ env.TARGET_CLUSTER }} 2>/dev/null || \
+            argocd cluster add "$TARGET_CONTEXT" \
+              --name ${{ env.TARGET_CLUSTER }} \
+              --yes
 
           kubectl config use-context "$MGMT_CONTEXT"
 
