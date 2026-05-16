@@ -1,0 +1,104 @@
+name: Infra ECR
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Choose action"
+        required: true
+        default: "apply"
+        type: choice
+        options:
+          - apply
+          - destroy
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-west-2
+  TERRAFORM_VERSION: 1.5.7
+  TF_STATE_BUCKET: eksdemo-terraform-state
+  TF_LOCK_TABLE: terraform-locks
+  ENV_DIR: infra/envs/ecr
+
+jobs:
+  fmt:
+    name: Terraform Format
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.action == 'apply' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+      - name: terraform fmt
+        working-directory: ${{ env.ENV_DIR }}
+        run: terraform fmt -check -recursive
+
+  validate:
+    name: Terraform Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-validate-ecr
+      - name: terraform init
+        working-directory: ${{ env.ENV_DIR }}
+        run: terraform init -upgrade
+      - name: terraform validate
+        working-directory: ${{ env.ENV_DIR }}
+        run: terraform validate
+
+  apply:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+    needs: [fmt, validate]
+    if: ${{ github.event.inputs.action == 'apply' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-infra-ecr
+      - name: Terraform Init
+        working-directory: ${{ env.ENV_DIR }}
+        run: terraform init -upgrade
+      - name: Terraform Apply
+        working-directory: ${{ env.ENV_DIR }}
+        run: terraform apply -auto-approve
+
+  destroy:
+    name: Terraform Destroy
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.action == 'destroy' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-destroy-ecr
+      - name: Terraform Init
+        working-directory: ${{ env.ENV_DIR }}
+        run: terraform init -upgrade
+      - name: Terraform Destroy
+        working-directory: ${{ env.ENV_DIR }}
+        run: terraform destroy -auto-approve
+      - name: Cleanup state
+        run: |
+          aws s3 rm s3://${{ env.TF_STATE_BUCKET }}/eksdemo/ecr/ --recursive || true
