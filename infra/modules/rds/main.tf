@@ -28,11 +28,11 @@ resource "aws_db_subnet_group" "rds_subnet_group" {
 # RDS Security Group
 # ----------------------------
 resource "aws_security_group" "rds_sg" {
-  name        = "rds-sg"
+  name        = "${var.name_prefix}-rds-sg"
   description = "Security Group for RDS MySQL"
   vpc_id      = var.vpc_id
   tags = {
-    Name = "rds-sg"
+    Name = "${var.name_prefix}-rds-sg"
   }
 }
 
@@ -74,7 +74,7 @@ resource "aws_secretsmanager_secret_version" "rds_credentials_version" {
 # RDS MySQL Instance
 # ----------------------------
 resource "aws_db_instance" "mysql" {
-  identifier        = "mydb"
+  identifier        = "${var.name_prefix}-mydb"
   engine            = "mysql"
   engine_version    = "8.0.44"
   instance_class    = "db.t3.micro"
@@ -82,7 +82,7 @@ resource "aws_db_instance" "mysql" {
 
   db_name  = var.DB_NAME
   username = var.DB_USER
-  password = random_password.db_password.result # ✅ Auto-generated password
+  password = random_password.db_password.result
 
   db_subnet_group_name   = aws_db_subnet_group.rds_subnet_group.name
   vpc_security_group_ids = [aws_security_group.rds_sg.id]
@@ -94,7 +94,7 @@ resource "aws_db_instance" "mysql" {
   publicly_accessible = false
 
   tags = {
-    Name = "mydb"
+    Name = "${var.name_prefix}-mydb"
   }
 }
 
