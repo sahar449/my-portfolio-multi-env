@@ -1,0 +1,140 @@
+name: Destroy All Environments
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-west-2
+  TERRAFORM_VERSION: 1.5.7
+  TF_STATE_BUCKET: eksdemo-terraform-state
+
+jobs:
+  destroy-staging:
+    name: Destroy Staging
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-destroy-staging
+      - name: Terraform Init
+        working-directory: infra/envs/staging
+        run: terraform init -upgrade
+      - name: Read VPC name
+        working-directory: infra/envs/staging
+        run: echo "VPC_NAME_STAGING=$(terraform output -raw vpc_name 2>/dev/null || echo '')" >> $GITHUB_ENV
+      - name: Cleanup VPC resources
+        run: |
+          [ -z "$VPC_NAME_STAGING" ] && echo "No VPC to clean" && exit 0
+          VPC_ID=$(aws ec2 describe-vpcs \
+            --filters "Name=tag:Name,Values=$VPC_NAME_STAGING" \
+            --query "Vpcs[0].VpcId" --output text)
+          [ "$VPC_ID" = "None" ] && exit 0
+          LB_ARNS=$(aws elbv2 describe-load-balancers \
+            --query "LoadBalancers[?VpcId=='$VPC_ID'].LoadBalancerArn" --output text)
+          for arn in $LB_ARNS; do aws elbv2 delete-load-balancer --load-balancer-arn "$arn" || true; done
+          [ -n "$LB_ARNS" ] && sleep 15
+          SGS=$(aws ec2 describe-security-groups \
+            --filters "Name=vpc-id,Values=$VPC_ID" \
+            --query "SecurityGroups[?GroupName!='default'].GroupId" --output text)
+          for sg in $SGS; do aws ec2 delete-security-group --group-id "$sg" || true; done
+      - name: Terraform Destroy
+        working-directory: infra/envs/staging
+        run: terraform destroy -auto-approve
+      - name: Cleanup state
+        run: aws s3 rm s3://${{ env.TF_STATE_BUCKET }}/eksdemo/staging/ --recursive || true
+
+  destroy-prod:
+    name: Destroy Prod
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-destroy-prod
+      - name: Terraform Init
+        working-directory: infra/envs/prod
+        run: terraform init -upgrade
+      - name: Read VPC name
+        working-directory: infra/envs/prod
+        run: echo "VPC_NAME_PROD=$(terraform output -raw vpc_name 2>/dev/null || echo '')" >> $GITHUB_ENV
+      - name: Cleanup VPC resources
+        run: |
+          [ -z "$VPC_NAME_PROD" ] && echo "No VPC to clean" && exit 0
+          VPC_ID=$(aws ec2 describe-vpcs \
+            --filters "Name=tag:Name,Values=$VPC_NAME_PROD" \
+            --query "Vpcs[0].VpcId" --output text)
+          [ "$VPC_ID" = "None" ] && exit 0
+          LB_ARNS=$(aws elbv2 describe-load-balancers \
+            --query "LoadBalancers[?VpcId=='$VPC_ID'].LoadBalancerArn" --output text)
+          for arn in $LB_ARNS; do aws elbv2 delete-load-balancer --load-balancer-arn "$arn" || true; done
+          [ -n "$LB_ARNS" ] && sleep 15
+          SGS=$(aws ec2 describe-security-groups \
+            --filters "Name=vpc-id,Values=$VPC_ID" \
+            --query "SecurityGroups[?GroupName!='default'].GroupId" --output text)
+          for sg in $SGS; do aws ec2 delete-security-group --group-id "$sg" || true; done
+      - name: Terraform Destroy
+        working-directory: infra/envs/prod
+        run: terraform destroy -auto-approve
+      - name: Cleanup state
+        run: aws s3 rm s3://${{ env.TF_STATE_BUCKET }}/eksdemo/prod/ --recursive || true
+
+  destroy-dev:
+    name: Destroy Dev
+    runs-on: ubuntu-latest
+    needs: [destroy-staging, destroy-prod]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-destroy-dev
+      - name: Terraform Init
+        working-directory: infra/envs/dev
+        run: terraform init -upgrade
+      - name: Terraform Destroy
+        working-directory: infra/envs/dev
+        run: terraform destroy -auto-approve
+      - name: Cleanup state
+        run: aws s3 rm s3://${{ env.TF_STATE_BUCKET }}/eksdemo/dev/ --recursive || true
+
+  destroy-mgmt:
+    name: Destroy Mgmt
+    runs-on: ubuntu-latest
+    needs: [destroy-staging, destroy-prod]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-destroy-mgmt
+      - name: Terraform Init
+        working-directory: infra/envs/mgmt
+        run: terraform init -upgrade
+      - name: Terraform Destroy
+        working-directory: infra/envs/mgmt
+        run: terraform destroy -auto-approve
+      - name: Cleanup state
+        run: aws s3 rm s3://${{ env.TF_STATE_BUCKET }}/eksdemo/mgmt/ --recursive || true
