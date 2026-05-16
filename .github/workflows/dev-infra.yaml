@@ -1,0 +1,196 @@
+name: Infra Dev
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Choose action"
+        required: true
+        default: "apply"
+        type: choice
+        options:
+          - apply
+          - destroy
+
+permissions:
+  id-token: write
+  contents: read
+  actions: write
+
+env:
+  AWS_REGION: us-west-2
+  TERRAFORM_VERSION: 1.5.7
+  TF_STATE_BUCKET: eksdemo-terraform-state
+  TF_LOCK_TABLE: terraform-locks
+  ENV_DIR: infra/envs/dev
+
+jobs:
+  bootstrap:
+    name: Bootstrap State Backend
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.action == 'apply' }}
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-bootstrap-dev
+
+      - name: Create S3 bucket for Terraform state
+        run: |
+          if ! aws s3api head-bucket --bucket ${{ env.TF_STATE_BUCKET }} 2>/dev/null; then
+            aws s3api create-bucket \
+              --bucket ${{ env.TF_STATE_BUCKET }} \
+              --region ${{ env.AWS_REGION }} \
+              --create-bucket-configuration LocationConstraint=${{ env.AWS_REGION }}
+            aws s3api put-bucket-versioning \
+              --bucket ${{ env.TF_STATE_BUCKET }} \
+              --versioning-configuration Status=Enabled
+            aws s3api put-bucket-encryption \
+              --bucket ${{ env.TF_STATE_BUCKET }} \
+              --server-side-encryption-configuration \
+              '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+          fi
+
+      - name: Create DynamoDB table for state locking
+        run: |
+          if ! aws dynamodb describe-table --table-name ${{ env.TF_LOCK_TABLE }} 2>/dev/null; then
+            aws dynamodb create-table \
+              --table-name ${{ env.TF_LOCK_TABLE }} \
+              --attribute-definitions AttributeName=LockID,AttributeType=S \
+              --key-schema AttributeName=LockID,KeyType=HASH \
+              --billing-mode PAY_PER_REQUEST \
+              --region ${{ env.AWS_REGION }}
+            aws dynamodb wait table-exists --table-name ${{ env.TF_LOCK_TABLE }}
+          fi
+
+  fmt:
+    name: Terraform Format
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.action == 'apply' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+      - name: terraform fmt
+        working-directory: ${{ env.ENV_DIR }}
+        run: terraform fmt -check -recursive
+
+  tflint:
+    name: TFLint
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.action == 'apply' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.50.3
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-tflint-dev
+      - name: Init tflint
+        working-directory: ${{ env.ENV_DIR }}
+        run: tflint --init --config ../../.tflint.hcl
+      - name: Run tflint
+        working-directory: ${{ env.ENV_DIR }}
+        run: tflint --minimum-failure-severity=error --config ../../.tflint.hcl
+
+  trivy-scan:
+    name: Trivy IaC Scan
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.action == 'apply' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: config
+          scan-ref: ${{ env.ENV_DIR }}/
+          scanners: config,secret
+          format: table
+          severity: CRITICAL,HIGH,MEDIUM,LOW
+          exit-code: '0'
+
+  validate:
+    name: Terraform Validate
+    runs-on: ubuntu-latest
+    needs: [bootstrap]
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-validate-dev
+      - name: terraform init
+        working-directory: ${{ env.ENV_DIR }}
+        run: terraform init -upgrade
+      - name: terraform validate
+        working-directory: ${{ env.ENV_DIR }}
+        run: terraform validate
+
+  apply:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+    needs: [fmt, validate, tflint, trivy-scan, bootstrap]
+    if: ${{ github.event.inputs.action == 'apply' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-infra-dev
+
+      - name: Terraform Init
+        working-directory: ${{ env.ENV_DIR }}
+        run: terraform init -upgrade
+
+      - name: Terraform Apply
+        working-directory: ${{ env.ENV_DIR }}
+        run: terraform apply -auto-approve
+
+      - name: Trigger CI Dev
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run dev-ci.yaml --ref dev
+
+  destroy:
+    name: Terraform Destroy
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.action == 'destroy' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-infra-destroy-dev
+
+      - name: Terraform Init
+        working-directory: ${{ env.ENV_DIR }}
+        run: terraform init -upgrade
+
+      - name: Terraform Destroy
+        working-directory: ${{ env.ENV_DIR }}
+        run: terraform destroy -auto-approve
+
+      - name: Cleanup state
+        run: |
+          aws s3 rm s3://${{ env.TF_STATE_BUCKET }}/eksdemo/dev/ --recursive || true

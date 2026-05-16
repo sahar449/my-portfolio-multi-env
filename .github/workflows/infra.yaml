@@ -18,7 +18,6 @@ on:
         type: choice
         options:
           - mgmt
-          - dev
           - staging
           - prod
 
