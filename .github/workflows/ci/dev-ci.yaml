@@ -11,7 +11,7 @@ on:
 
 jobs:
   build:
-    uses: sahar449/my-portfolio-multi-env/.github/workflows/ci-build.yaml@main
+    uses: sahar449/my-portfolio-multi-env/.github/workflows/ci/ci-build.yaml@main
     with:
       environment: dev
     secrets: inherit
