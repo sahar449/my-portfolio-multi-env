@@ -16,6 +16,7 @@ jobs:
   qa-tests:
     name: QA Tests
     runs-on: ubuntu-latest
+    environment: staging
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - uses: actions/checkout@v4
@@ -36,6 +37,7 @@ jobs:
   e2e-tests:
     name: E2E Tests
     runs-on: ubuntu-latest
+    environment: staging
     needs: qa-tests
     steps:
       - uses: actions/checkout@v4
