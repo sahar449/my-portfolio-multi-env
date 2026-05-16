@@ -19,10 +19,6 @@ module "vpc" {
   name_prefix          = var.name_prefix
 }
 
-module "ssl" {
-  source = "../../modules/ssl"
-}
-
 module "rds" {
   source          = "../../modules/rds"
   DB_NAME         = var.DB_NAME
