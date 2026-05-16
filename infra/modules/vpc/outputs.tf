@@ -16,3 +16,7 @@ output "public_subnet_ids" {
 output "cidr_blocks" {
   value = aws_vpc.main.cidr_block
 }
+
+output "vpc_name" {
+  value = "${var.name_prefix}-vpc"
+}

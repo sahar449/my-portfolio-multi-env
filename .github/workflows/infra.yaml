@@ -222,13 +222,9 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: github-actions-infra-destroy
 
-      - name: Set VPC name
-        run: |
-          case "${{ github.event.inputs.environment }}" in
-            dev)     echo "VPC_NAME=eksdemo-vpc" >> $GITHUB_ENV ;;
-            staging) echo "VPC_NAME=eksdemo-staging-vpc" >> $GITHUB_ENV ;;
-            prod)    echo "VPC_NAME=eksdemo-prod-vpc" >> $GITHUB_ENV ;;
-          esac
+      - name: Read VPC name from Terraform
+        working-directory: infra/envs/${{ github.event.inputs.environment }}
+        run: echo "VPC_NAME=$(terraform output -raw vpc_name)" >> $GITHUB_ENV
 
       - name: Cleanup VPC resources
         run: |
