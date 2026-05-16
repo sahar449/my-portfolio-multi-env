@@ -87,7 +87,7 @@ jobs:
         run: |
           [ -z "$VPC_NAME" ] && echo "No VPC to clean" && exit 0
           VPC_ID=$(aws ec2 describe-vpcs \
-            --filters "Name=tag:Name,Values=$VPC_NAME" \
+            --filters "Name=tag:Name,Values=${VPC_NAME}" \
             --query "Vpcs[0].VpcId" --output text)
           [ "$VPC_ID" = "None" ] && exit 0
           LB_ARNS=$(aws elbv2 describe-load-balancers \
@@ -131,7 +131,7 @@ jobs:
         run: |
           [ -z "$VPC_NAME" ] && echo "No VPC to clean" && exit 0
           VPC_ID=$(aws ec2 describe-vpcs \
-            --filters "Name=tag:Name,Values=$VPC_NAME" \
+            --filters "Name=tag:Name,Values=${VPC_NAME}" \
             --query "Vpcs[0].VpcId" --output text)
           [ "$VPC_ID" = "None" ] && exit 0
           LB_ARNS=$(aws elbv2 describe-load-balancers \
