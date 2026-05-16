@@ -29,6 +29,7 @@ env:
   TF_STATE_BUCKET: eksdemo-terraform-state
   TF_LOCK_TABLE: terraform-locks
   ENV_DIR: infra/envs/staging
+  EKS_CLUSTER: eksdemo-staging-cluster
 
 jobs:
   bootstrap:
@@ -166,6 +167,19 @@ jobs:
       - name: Terraform Apply
         working-directory: ${{ env.ENV_DIR }}
         run: terraform apply -auto-approve
+
+      - name: Grant admin user cluster access
+        run: |
+          aws eks create-access-entry \
+            --cluster-name ${{ env.EKS_CLUSTER }} \
+            --principal-arn arn:aws:iam::${{ secrets.AWS_ACCOUNT_NUMBER }}:user/${{ secrets.AWS_USER }} \
+            --region ${{ env.AWS_REGION }} 2>/dev/null || true
+          aws eks associate-access-policy \
+            --cluster-name ${{ env.EKS_CLUSTER }} \
+            --principal-arn arn:aws:iam::${{ secrets.AWS_ACCOUNT_NUMBER }}:user/${{ secrets.AWS_USER }} \
+            --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy \
+            --access-scope type=cluster \
+            --region ${{ env.AWS_REGION }} 2>/dev/null || true
 
       - name: Trigger CI Staging
         env:
