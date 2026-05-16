@@ -17,6 +17,7 @@ on:
         default: "dev"
         type: choice
         options:
+          - mgmt
           - dev
           - staging
           - prod
