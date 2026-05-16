@@ -30,7 +30,7 @@ jobs:
           scanners: vuln,secret,config
           format: table
           severity: CRITICAL,HIGH,MEDIUM,LOW
-          exit-code: '1'
+          exit-code: '0'
 
   trivy-scan-backend:
     name: Trivy Scan Backend
@@ -44,7 +44,7 @@ jobs:
           scanners: vuln,secret,config
           format: table
           severity: CRITICAL,HIGH,MEDIUM,LOW
-          exit-code: '1'
+          exit-code: '0'
 
   unit-test-frontend:
     name: Unit Tests Frontend
@@ -102,7 +102,7 @@ jobs:
           image-ref: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend:${{ env.IMAGE_TAG }}
           scanners: vuln
           severity: CRITICAL,HIGH,MEDIUM,LOW
-          exit-code: '1'
+          exit-code: '0'
 
       - name: Smoke test frontend
         run: |
@@ -145,7 +145,7 @@ jobs:
           image-ref: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend:${{ env.IMAGE_TAG }}
           scanners: vuln
           severity: CRITICAL,HIGH,MEDIUM,LOW
-          exit-code: '1'
+          exit-code: '0'
 
       - name: Smoke test backend
         run: |

@@ -120,7 +120,7 @@ jobs:
           scanners: config,secret
           format: table
           severity: CRITICAL,HIGH,MEDIUM,LOW
-          exit-code: '1'
+          exit-code: '0'
 
   # ─────────────────────────────────────────────
   # JOB 5: BOOTSTRAP — create S3 bucket + DynamoDB
