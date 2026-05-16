@@ -15,12 +15,12 @@ resource "random_password" "db_password" {
 # RDS Subnet Group
 # ----------------------------
 resource "aws_db_subnet_group" "rds_subnet_group" {
-  name        = "rds-subnet-group"
+  name        = "${var.name_prefix}-rds-subnet-group"
   description = "Subnet group for RDS"
   subnet_ids  = var.private_subnets
 
   tags = {
-    Name = "rds-subnet-group"
+    Name = "${var.name_prefix}-rds-subnet-group"
   }
 }
 

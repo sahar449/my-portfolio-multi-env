@@ -7,3 +7,7 @@ variable "cidr_blocks" {}
 variable "private_subnets" {
   type = list(string)
 }
+variable "name_prefix" {
+  description = "Environment prefix for unique resource names (dev, staging, prod)"
+  type        = string
+}

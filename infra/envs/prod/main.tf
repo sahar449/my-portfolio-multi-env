@@ -31,6 +31,7 @@ module "iam" {
   source            = "../../modules/iam"
   oidc_provider_arn = module.eks.oidc_provider_arn
   oidc_provider_url = module.eks.oidc_provider_url
+  create_iam        = false
   depends_on        = [module.eks]
 }
 
@@ -42,6 +43,7 @@ module "rds" {
   vpc_id          = module.vpc.vpc_id
   private_subnets = module.vpc.private_subnet_ids
   cidr_blocks     = module.vpc.cidr_blocks
+  name_prefix     = var.name_prefix
 }
 
 module "ssl" {

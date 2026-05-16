@@ -2,8 +2,8 @@
 # Load Balancer Controller Resources
 ###################################
 
-# IAM Policy for AWS Load Balancer Controller
 resource "aws_iam_policy" "lb_controller_policy" {
+  count       = var.create_iam ? 1 : 0
   name        = "eks-lb-controller-custom-policy"
   description = "IAM policy for AWS Load Balancer Controller on EKS"
 
@@ -247,7 +247,6 @@ resource "aws_iam_policy" "lb_controller_policy" {
         ]
         Resource = "*"
       },
-      # Additional permissions for cleanup and deletion without tag restrictions
       {
         Effect = "Allow"
         Action = [
@@ -271,9 +270,14 @@ resource "aws_iam_policy" "lb_controller_policy" {
   })
 }
 
-# IAM Role for ALB Controller (IRSA)
+data "aws_iam_policy" "lb_controller_policy" {
+  count = var.create_iam ? 0 : 1
+  name  = "eks-lb-controller-custom-policy"
+}
+
 resource "aws_iam_role" "lb_controller_role" {
-  name = "eks-lb-controller-role"
+  count = var.create_iam ? 1 : 0
+  name  = "eks-lb-controller-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -295,18 +299,23 @@ resource "aws_iam_role" "lb_controller_role" {
   })
 }
 
-# Attach custom policy to role
+data "aws_iam_role" "lb_controller_role" {
+  count = var.create_iam ? 0 : 1
+  name  = "eks-lb-controller-role"
+}
+
 resource "aws_iam_role_policy_attachment" "lb_controller_attach" {
-  role       = aws_iam_role.lb_controller_role.name
-  policy_arn = aws_iam_policy.lb_controller_policy.arn
+  count      = var.create_iam ? 1 : 0
+  role       = aws_iam_role.lb_controller_role[0].name
+  policy_arn = aws_iam_policy.lb_controller_policy[0].arn
 }
 
 ###################################
 # External DNS Resources
 ###################################
 
-# Custom IAM Policy for Route53 access
 resource "aws_iam_policy" "external_dns_policy" {
+  count       = var.create_iam ? 1 : 0
   name        = "ExternalDNSIAMPolicy"
   description = "IAM policy for External DNS to manage Route53 records"
 
@@ -330,9 +339,14 @@ resource "aws_iam_policy" "external_dns_policy" {
   })
 }
 
-# IAM Role for External DNS (IRSA)
+data "aws_iam_policy" "external_dns_policy" {
+  count = var.create_iam ? 0 : 1
+  name  = "ExternalDNSIAMPolicy"
+}
+
 resource "aws_iam_role" "external_dns_role" {
-  name = "eks-external-dns-role"
+  count = var.create_iam ? 1 : 0
+  name  = "eks-external-dns-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -353,10 +367,15 @@ resource "aws_iam_role" "external_dns_role" {
   })
 }
 
-# Attach policies for Route53 management
+data "aws_iam_role" "external_dns_role" {
+  count = var.create_iam ? 0 : 1
+  name  = "eks-external-dns-role"
+}
+
 resource "aws_iam_role_policy_attachment" "external_dns_attach_custom" {
-  role       = aws_iam_role.external_dns_role.name
-  policy_arn = aws_iam_policy.external_dns_policy.arn
+  count      = var.create_iam ? 1 : 0
+  role       = aws_iam_role.external_dns_role[0].name
+  policy_arn = aws_iam_policy.external_dns_policy[0].arn
 }
 
 ###################################
@@ -364,7 +383,8 @@ resource "aws_iam_role_policy_attachment" "external_dns_attach_custom" {
 ###################################
 
 resource "aws_iam_policy" "flask_app_secrets_policy" {
-  name = "flask-app-secrets-policy"
+  count = var.create_iam ? 1 : 0
+  name  = "flask-app-secrets-policy"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -384,6 +404,11 @@ resource "aws_iam_policy" "flask_app_secrets_policy" {
       }
     ]
   })
+}
+
+data "aws_iam_policy" "flask_app_secrets_policy" {
+  count = var.create_iam ? 0 : 1
+  name  = "flask-app-secrets-policy"
 }
 
 data "aws_iam_policy_document" "flask_app_assume_role" {
@@ -410,12 +435,30 @@ data "aws_iam_policy_document" "flask_app_assume_role" {
 }
 
 resource "aws_iam_role" "flask_app_role" {
+  count              = var.create_iam ? 1 : 0
   name               = "flask-app-secrets-role"
   assume_role_policy = data.aws_iam_policy_document.flask_app_assume_role.json
 }
 
-resource "aws_iam_role_policy_attachment" "flask_app_attach" {
-  role       = aws_iam_role.flask_app_role.name
-  policy_arn = aws_iam_policy.flask_app_secrets_policy.arn
+data "aws_iam_role" "flask_app_role" {
+  count = var.create_iam ? 0 : 1
+  name  = "flask-app-secrets-role"
 }
 
+resource "aws_iam_role_policy_attachment" "flask_app_attach" {
+  count      = var.create_iam ? 1 : 0
+  role       = aws_iam_role.flask_app_role[0].name
+  policy_arn = aws_iam_policy.flask_app_secrets_policy[0].arn
+}
+
+###################################
+# Locals — unify resource vs data
+###################################
+
+locals {
+  lb_controller_role_name    = var.create_iam ? aws_iam_role.lb_controller_role[0].name : data.aws_iam_role.lb_controller_role[0].name
+  lb_controller_role_arn     = var.create_iam ? aws_iam_role.lb_controller_role[0].arn : data.aws_iam_role.lb_controller_role[0].arn
+  external_dns_role_name     = var.create_iam ? aws_iam_role.external_dns_role[0].name : data.aws_iam_role.external_dns_role[0].name
+  external_dns_role_arn      = var.create_iam ? aws_iam_role.external_dns_role[0].arn : data.aws_iam_role.external_dns_role[0].arn
+  flask_app_role_arn         = var.create_iam ? aws_iam_role.flask_app_role[0].arn : data.aws_iam_role.flask_app_role[0].arn
+}
