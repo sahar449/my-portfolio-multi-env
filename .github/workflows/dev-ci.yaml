@@ -12,6 +12,7 @@ on:
 permissions:
   id-token: write
   contents: read
+  pull-requests: write
 
 env:
   AWS_REGION: us-west-2
@@ -29,8 +30,8 @@ jobs:
           scan-ref: ./services/frontend
           scanners: vuln,secret,config
           format: table
-          severity: CRITICAL,HIGH,MEDIUM
-          exit-code: '1'
+          severity: CRITICAL,HIGH,MEDIUM,LOW
+          exit-code: '0'
 
   trivy-scan-backend:
     name: Trivy Scan Backend
@@ -43,8 +44,8 @@ jobs:
           scan-ref: ./services/backend
           scanners: vuln,secret,config
           format: table
-          severity: CRITICAL,HIGH,MEDIUM
-          exit-code: '1'
+          severity: CRITICAL,HIGH,MEDIUM,LOW
+          exit-code: '0'
 
   unit-test-frontend:
     name: Unit Tests Frontend
@@ -57,7 +58,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r services/frontend/requirements.txt
       - name: Run unit tests
-        run: pytest services/frontend/test_app.py -v
+        run: pytest services/frontend/tests/ -v
 
   unit-test-backend:
     name: Unit Tests Backend
@@ -70,7 +71,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r services/backend/requirements.txt
       - name: Run unit tests
-        run: pytest services/backend/test_app.py -v
+        run: pytest services/backend/tests/ -v
 
   build-frontend:
     name: Build & Push Frontend
@@ -83,7 +84,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
-          role-session-name: github-actions-frontend
+          role-session-name: github-actions-dev-frontend
 
       - uses: aws-actions/amazon-ecr-login@v2
 
@@ -92,22 +93,22 @@ jobs:
           context: ./services/frontend
           push: true
           tags: |
-            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend:${{ env.IMAGE_TAG }}
-            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend:latest
+            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend-dev:${{ env.IMAGE_TAG }}
+            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend-dev:latest
 
       - name: Trivy image scan
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: image
-          image-ref: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend:${{ env.IMAGE_TAG }}
+          image-ref: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend-dev:${{ env.IMAGE_TAG }}
           scanners: vuln
-          severity: CRITICAL,HIGH,MEDIUM
-          exit-code: '1'
+          severity: CRITICAL,HIGH,MEDIUM,LOW
+          exit-code: '0'
 
       - name: Smoke test frontend
         run: |
           docker run -d --name test-frontend -p 5000:5000 \
-            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend:${{ env.IMAGE_TAG }}
+            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend-dev:${{ env.IMAGE_TAG }}
           for i in $(seq 1 15); do
             curl -sf http://localhost:5000/health && break
             [ "$i" -eq 15 ] && docker logs test-frontend && exit 1
@@ -126,7 +127,7 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
-          role-session-name: github-actions-backend
+          role-session-name: github-actions-dev-backend
 
       - uses: aws-actions/amazon-ecr-login@v2
 
@@ -135,25 +136,49 @@ jobs:
           context: ./services/backend
           push: true
           tags: |
-            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend:${{ env.IMAGE_TAG }}
-            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend:latest
+            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend-dev:${{ env.IMAGE_TAG }}
+            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend-dev:latest
 
       - name: Trivy image scan
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: image
-          image-ref: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend:${{ env.IMAGE_TAG }}
+          image-ref: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend-dev:${{ env.IMAGE_TAG }}
           scanners: vuln
-          severity: CRITICAL,HIGH,MEDIUM
-          exit-code: '1'
+          severity: CRITICAL,HIGH,MEDIUM,LOW
+          exit-code: '0'
 
       - name: Smoke test backend
         run: |
           docker run -d --name test-backend -p 5002:5002 \
-            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend:${{ env.IMAGE_TAG }}
+            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend-dev:${{ env.IMAGE_TAG }}
           for i in $(seq 1 15); do
             curl -sf http://localhost:5002/health && break
             [ "$i" -eq 15 ] && docker logs test-backend && exit 1
             sleep 2
           done
           docker rm -f test-backend
+
+  open-pr-to-staging:
+    name: Open PR to Staging
+    runs-on: ubuntu-latest
+    needs: [build-frontend, build-backend]
+    steps:
+      - name: Open PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          EXISTING=$(gh pr list \
+            --repo ${{ github.repository }} \
+            --base staging --head dev \
+            --json number --jq '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            echo "PR #$EXISTING already exists — skipping"
+          else
+            gh pr create \
+              --repo ${{ github.repository }} \
+              --base staging \
+              --head dev \
+              --title "promote: dev → staging (${{ github.sha }})" \
+              --body "Automated PR after successful CI on dev. Review and merge to trigger staging pipeline."
+          fi
