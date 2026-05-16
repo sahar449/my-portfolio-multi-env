@@ -119,8 +119,8 @@ jobs:
           scan-ref: infra/envs/${{ github.event.inputs.environment }}/
           scanners: config,secret
           format: table
-          severity: CRITICAL,HIGH,MEDIUM
-          exit-code: '0'
+          severity: CRITICAL,HIGH,MEDIUM,LOW
+          exit-code: '1'
 
   # ─────────────────────────────────────────────
   # JOB 5: BOOTSTRAP — create S3 bucket + DynamoDB
