@@ -1,0 +1,10 @@
+name: Test Reusable Subdir
+
+on:
+  workflow_dispatch:
+
+jobs:
+  call:
+    uses: ./.github/workflows/reusable/hello.yml
+    with:
+      message: "subdirectory works!"
