@@ -24,10 +24,6 @@ resource "aws_eks_cluster" "this" {
     subnet_ids = var.private_subnet_ids
   }
 
-  access_config {
-    authentication_mode = "API_AND_CONFIG_MAP"
-  }
-
   depends_on = [aws_iam_role.eks_cluster_role]
 }
 
