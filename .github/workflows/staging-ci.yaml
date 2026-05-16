@@ -25,6 +25,7 @@ jobs:
 
       - name: Run QA tests
         env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
           STAGING_FRONTEND_URL: ${{ secrets.STAGING_FRONTEND_URL }}
           STAGING_BACKEND_URL: ${{ secrets.STAGING_BACKEND_URL }}
         run: pytest services/tests/qa/ -v --tb=short

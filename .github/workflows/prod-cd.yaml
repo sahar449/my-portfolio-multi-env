@@ -13,6 +13,7 @@ permissions:
   contents: write
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   AWS_REGION: us-west-2
   MGMT_CLUSTER: eksdemo-mgmt-cluster
   TARGET_CLUSTER: eksdemo-prod-cluster
