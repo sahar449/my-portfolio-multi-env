@@ -92,14 +92,14 @@ jobs:
           context: ./services/frontend
           push: true
           tags: |
-            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend:${{ env.IMAGE_TAG }}
-            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend:${{ inputs.environment }}-latest
+            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend-${{ inputs.environment }}:${{ env.IMAGE_TAG }}
+            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend-${{ inputs.environment }}:latest
 
       - name: Trivy image scan
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: image
-          image-ref: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend:${{ env.IMAGE_TAG }}
+          image-ref: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend-${{ inputs.environment }}:${{ env.IMAGE_TAG }}
           scanners: vuln
           severity: CRITICAL,HIGH,MEDIUM,LOW
           exit-code: '0'
@@ -107,7 +107,7 @@ jobs:
       - name: Smoke test frontend
         run: |
           docker run -d --name test-frontend -p 5000:5000 \
-            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend:${{ env.IMAGE_TAG }}
+            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend-${{ inputs.environment }}:${{ env.IMAGE_TAG }}
           for i in $(seq 1 15); do
             curl -sf http://localhost:5000/health && break
             [ "$i" -eq 15 ] && docker logs test-frontend && exit 1
@@ -135,14 +135,14 @@ jobs:
           context: ./services/backend
           push: true
           tags: |
-            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend:${{ env.IMAGE_TAG }}
-            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend:${{ inputs.environment }}-latest
+            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend-${{ inputs.environment }}:${{ env.IMAGE_TAG }}
+            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend-${{ inputs.environment }}:latest
 
       - name: Trivy image scan
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: image
-          image-ref: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend:${{ env.IMAGE_TAG }}
+          image-ref: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend-${{ inputs.environment }}:${{ env.IMAGE_TAG }}
           scanners: vuln
           severity: CRITICAL,HIGH,MEDIUM,LOW
           exit-code: '0'
@@ -150,7 +150,7 @@ jobs:
       - name: Smoke test backend
         run: |
           docker run -d --name test-backend -p 5002:5002 \
-            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend:${{ env.IMAGE_TAG }}
+            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend-${{ inputs.environment }}:${{ env.IMAGE_TAG }}
           for i in $(seq 1 15); do
             curl -sf http://localhost:5002/health && break
             [ "$i" -eq 15 ] && docker logs test-backend && exit 1

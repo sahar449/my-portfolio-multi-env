@@ -1,4 +1,14 @@
-### prod environment — full stack, separate from dev and staging ###
+### prod environment — full stack ###
+
+module "ecr_frontend" {
+  source    = "../../modules/ecr"
+  repo_name = "frontend-prod"
+}
+
+module "ecr_backend" {
+  source    = "../../modules/ecr"
+  repo_name = "backend-prod"
+}
 
 module "vpc" {
   source               = "../../modules/vpc"

@@ -1,13 +1,13 @@
-### dev environment — ECR + VPC (no cluster, no RDS) ###
+### dev environment — ECR + VPC ###
 
 module "ecr_frontend" {
   source    = "../../modules/ecr"
-  repo_name = "frontend"
+  repo_name = "frontend-dev"
 }
 
 module "ecr_backend" {
   source    = "../../modules/ecr"
-  repo_name = "backend"
+  repo_name = "backend-dev"
 }
 
 module "vpc" {
