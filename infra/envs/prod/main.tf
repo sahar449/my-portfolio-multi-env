@@ -1,4 +1,4 @@
-### prod environment ###
+### prod environment — full stack, separate from dev and staging ###
 
 module "vpc" {
   source               = "../../modules/vpc"
@@ -32,4 +32,18 @@ module "rds" {
   vpc_id          = module.vpc.vpc_id
   private_subnets = module.vpc.private_subnet_ids
   cidr_blocks     = module.vpc.cidr_blocks
+}
+
+module "ssl" {
+  source = "../../modules/ssl"
+}
+
+module "monitoring" {
+  source            = "../../modules/monitoring"
+  name_prefix       = var.name_prefix
+  region            = var.region
+  cluster_name      = var.cluster_name
+  oidc_provider_arn = module.eks.oidc_provider_arn
+  oidc_provider_url = module.eks.oidc_provider_url
+  depends_on        = [module.eks]
 }

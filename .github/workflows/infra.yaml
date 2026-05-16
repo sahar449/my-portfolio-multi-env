@@ -29,7 +29,6 @@ permissions:
 env:
   AWS_REGION: us-west-2
   TERRAFORM_VERSION: 1.5.7
-  VPC_NAME: eksdemo-vpc
   TF_STATE_BUCKET: eksdemo-terraform-state
   TF_LOCK_TABLE: terraform-locks
 
@@ -223,6 +222,14 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: github-actions-infra-destroy
 
+      - name: Set VPC name
+        run: |
+          case "${{ github.event.inputs.environment }}" in
+            dev)     echo "VPC_NAME=eksdemo-vpc" >> $GITHUB_ENV ;;
+            staging) echo "VPC_NAME=eksdemo-staging-vpc" >> $GITHUB_ENV ;;
+            prod)    echo "VPC_NAME=eksdemo-prod-vpc" >> $GITHUB_ENV ;;
+          esac
+
       - name: Cleanup VPC resources
         run: |
           VPC_ID=$(aws ec2 describe-vpcs \
@@ -267,6 +274,4 @@ jobs:
       - name: Cleanup state backend
         if: success()
         run: |
-          aws dynamodb delete-table --table-name ${{ env.TF_LOCK_TABLE }} || true
-          aws s3 rm s3://${{ env.TF_STATE_BUCKET }} --recursive || true
-          aws s3api delete-bucket --bucket ${{ env.TF_STATE_BUCKET }} || true
+          aws s3 rm s3://${{ env.TF_STATE_BUCKET }}/eksdemo/${{ github.event.inputs.environment }}/ --recursive || true

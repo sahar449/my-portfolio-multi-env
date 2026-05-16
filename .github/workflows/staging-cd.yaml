@@ -14,7 +14,7 @@ permissions:
 
 env:
   AWS_REGION: us-west-2
-  CLUSTER_NAME: eksdemo-cluster
+  CLUSTER_NAME: eksdemo-staging-cluster
 
 jobs:
   deploy-staging:
