@@ -140,7 +140,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: [fmt, validate, tflint, trivy-scan, bootstrap]
     if: ${{ github.event.inputs.action == 'apply' }}
-    environment: production
     steps:
       - uses: actions/checkout@v4
 
@@ -167,7 +166,6 @@ jobs:
     name: Terraform Destroy
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.action == 'destroy' }}
-    environment: production
     steps:
       - uses: actions/checkout@v4
 
