@@ -1,167 +1,60 @@
 name: CI Staging
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CD Staging"]
+    types:
+      - completed
     branches:
       - staging
-    paths:
-      - 'services/**'
-  workflow_dispatch:
-
-permissions:
-  id-token: write
-  contents: read
-
-env:
-  AWS_REGION: us-west-2
-  IMAGE_TAG: ${{ github.sha }}
 
 jobs:
-  # ─────────────────────────────────────────────
-  # Trivy file-system scans (parallel)
-  # ─────────────────────────────────────────────
-  trivy-scan-frontend:
-    name: Trivy Scan Frontend
+  qa-tests:
+    name: QA Tests
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - uses: actions/checkout@v4
-      - uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: fs
-          scan-ref: ./services/frontend
-          scanners: vuln,secret,config
-          format: table
-          severity: CRITICAL,HIGH,MEDIUM
-          exit-code: '1'
 
-  trivy-scan-backend:
-    name: Trivy Scan Backend
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: fs
-          scan-ref: ./services/backend
-          scanners: vuln,secret,config
-          format: table
-          severity: CRITICAL,HIGH,MEDIUM
-          exit-code: '1'
-
-  # ─────────────────────────────────────────────
-  # Unit tests (parallel)
-  # ─────────────────────────────────────────────
-  unit-test-frontend:
-    name: Unit Tests Frontend
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install dependencies
-        run: pip install -r services/frontend/requirements.txt
-      - name: Run unit tests
-        run: pytest services/frontend/test_app.py -v
 
-  unit-test-backend:
-    name: Unit Tests Backend
+      - name: Install QA dependencies
+        run: pip install -r services/tests/qa/requirements.txt
+
+      - name: Run QA tests
+        env:
+          STAGING_FRONTEND_URL: ${{ secrets.STAGING_FRONTEND_URL }}
+          STAGING_BACKEND_URL: ${{ secrets.STAGING_BACKEND_URL }}
+        run: pytest services/tests/qa/ -v --tb=short
+
+  e2e-tests:
+    name: E2E Tests
     runs-on: ubuntu-latest
+    needs: qa-tests
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install dependencies
-        run: pip install -r services/backend/requirements.txt
-      - name: Run unit tests
-        run: pytest services/backend/test_app.py -v
 
-  # ─────────────────────────────────────────────
-  # Build, push, image scan, smoke test
-  # ─────────────────────────────────────────────
-  build-frontend:
-    name: Build & Push Frontend
-    runs-on: ubuntu-latest
-    needs: [trivy-scan-frontend, unit-test-frontend]
-    steps:
-      - uses: actions/checkout@v4
+      - name: Install E2E dependencies
+        run: pip install -r services/tests/e2e/requirements.txt
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Install Playwright browsers
+        run: playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        env:
+          STAGING_FRONTEND_URL: ${{ secrets.STAGING_FRONTEND_URL }}
+        run: pytest services/tests/e2e/ -v --tb=short
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: always()
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ env.AWS_REGION }}
-          role-session-name: github-actions-staging-frontend
-
-      - uses: aws-actions/amazon-ecr-login@v2
-
-      - uses: docker/build-push-action@v4
-        with:
-          context: ./services/frontend
-          push: true
-          tags: |
-            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend:${{ env.IMAGE_TAG }}
-            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend:staging-latest
-
-      - name: Trivy image scan
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: image
-          image-ref: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend:${{ env.IMAGE_TAG }}
-          scanners: vuln
-          severity: CRITICAL,HIGH,MEDIUM
-          exit-code: '1'
-
-      - name: Smoke test frontend
-        run: |
-          docker run -d --name test-frontend -p 5000:5000 \
-            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend:${{ env.IMAGE_TAG }}
-          for i in $(seq 1 15); do
-            curl -sf http://localhost:5000/health && break
-            [ "$i" -eq 15 ] && docker logs test-frontend && exit 1
-            sleep 2
-          done
-          docker rm -f test-frontend
-
-  build-backend:
-    name: Build & Push Backend
-    runs-on: ubuntu-latest
-    needs: [trivy-scan-backend, unit-test-backend]
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ env.AWS_REGION }}
-          role-session-name: github-actions-staging-backend
-
-      - uses: aws-actions/amazon-ecr-login@v2
-
-      - uses: docker/build-push-action@v4
-        with:
-          context: ./services/backend
-          push: true
-          tags: |
-            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend:${{ env.IMAGE_TAG }}
-            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend:staging-latest
-
-      - name: Trivy image scan
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: image
-          image-ref: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend:${{ env.IMAGE_TAG }}
-          scanners: vuln
-          severity: CRITICAL,HIGH,MEDIUM
-          exit-code: '1'
-
-      - name: Smoke test backend
-        run: |
-          docker run -d --name test-backend -p 5002:5002 \
-            ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend:${{ env.IMAGE_TAG }}
-          for i in $(seq 1 15); do
-            curl -sf http://localhost:5002/health && break
-            [ "$i" -eq 15 ] && docker logs test-backend && exit 1
-            sleep 2
-          done
-          docker rm -f test-backend
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
