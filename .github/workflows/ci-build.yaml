@@ -57,7 +57,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r services/frontend/requirements.txt
       - name: Run unit tests
-        run: pytest services/frontend/test_app.py -v
+        run: pytest services/frontend/tests/ -v
 
   unit-test-backend:
     name: Unit Tests Backend
@@ -70,7 +70,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r services/backend/requirements.txt
       - name: Run unit tests
-        run: pytest services/backend/test_app.py -v
+        run: pytest services/backend/tests/ -v
 
   build-frontend:
     name: Build & Push Frontend
