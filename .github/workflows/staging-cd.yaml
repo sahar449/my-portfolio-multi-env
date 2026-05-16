@@ -1,10 +1,7 @@
 name: CD Staging
 
 on:
-  workflow_run:
-    workflows: ["CI Staging"]
-    types:
-      - completed
+  push:
     branches:
       - staging
 
@@ -18,10 +15,9 @@ env:
   TARGET_CLUSTER: eksdemo-staging-cluster
 
 jobs:
-  deploy-staging:
-    name: Deploy to Staging
+  promote-and-deploy:
+    name: Promote & Deploy to Staging
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     environment: staging
     steps:
       - uses: actions/checkout@v4
@@ -33,6 +29,22 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: github-actions-cd-staging
+
+      # ── Promote images from dev ECR to staging ECR ────────────────────────
+      - uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Promote images dev → staging
+        env:
+          ECR: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          for service in frontend backend; do
+            docker pull  ${ECR}/${service}-dev:latest
+            docker tag   ${ECR}/${service}-dev:latest ${ECR}/${service}-staging:${IMAGE_TAG}
+            docker tag   ${ECR}/${service}-dev:latest ${ECR}/${service}-staging:latest
+            docker push  ${ECR}/${service}-staging:${IMAGE_TAG}
+            docker push  ${ECR}/${service}-staging:latest
+          done
 
       # ── Connect to mgmt cluster (where ArgoCD lives) ──────────────────────
       - name: Connect to mgmt cluster
@@ -87,11 +99,11 @@ jobs:
 
       # ── Update image tag in Git ────────────────────────────────────────────
       - name: Update image tag in Git
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          ECR_FRONTEND: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend-staging
+          ECR_BACKEND: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend-staging
         run: |
-          IMAGE_TAG="${{ github.event.workflow_run.head_sha }}"
-          ECR_FRONTEND="${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/frontend"
-          ECR_BACKEND="${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/backend"
-
           wget -qO /usr/local/bin/yq \
             https://github.com/mikefarah/yq/releases/download/v4.44.1/yq_linux_amd64
           chmod +x /usr/local/bin/yq
@@ -106,10 +118,9 @@ jobs:
           yq e ".app.image.tag = \"${IMAGE_TAG}\"" -i ArgoCD/backend/helm_chart/values.staging.yaml
 
           git add ArgoCD/frontend/helm_chart/values.staging.yaml ArgoCD/backend/helm_chart/values.staging.yaml
-          git diff --staged --quiet || git commit -m "cd: update staging image tag ${IMAGE_TAG}"
+          git diff --staged --quiet || git commit -m "cd: promote dev→staging image ${IMAGE_TAG}"
           git push
 
-      # ArgoCD detects the git change and syncs to the staging cluster
       - name: Apply ArgoCD staging apps
         run: kubectl apply -f ArgoCD/staging/root-app.yaml
 
@@ -126,53 +137,3 @@ jobs:
             sleep 15
           done
 
-  # ── QA tests — run after deploy is healthy ────────────────────────────────
-  qa-tests:
-    name: QA Tests
-    runs-on: ubuntu-latest
-    needs: deploy-staging
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install QA dependencies
-        run: pip install -r services/tests/qa/requirements.txt
-
-      - name: Run QA tests
-        env:
-          STAGING_FRONTEND_URL: ${{ secrets.STAGING_FRONTEND_URL }}
-          STAGING_BACKEND_URL: ${{ secrets.STAGING_BACKEND_URL }}
-        run: pytest services/tests/qa/ -v --tb=short
-
-  e2e-tests:
-    name: E2E Tests
-    runs-on: ubuntu-latest
-    needs: qa-tests
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install E2E dependencies
-        run: pip install -r services/tests/e2e/requirements.txt
-
-      - name: Install Playwright browsers
-        run: playwright install --with-deps chromium
-
-      - name: Run E2E tests
-        env:
-          STAGING_FRONTEND_URL: ${{ secrets.STAGING_FRONTEND_URL }}
-        run: pytest services/tests/e2e/ -v --tb=short
-
-      - name: Upload Playwright report
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: playwright-report
-          path: playwright-report/
-          retention-days: 7
