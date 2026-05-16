@@ -10,7 +10,7 @@ on:
 
 jobs:
   build:
-    uses: ./.github/workflows/ci-build.yaml
+    uses: sahar449/my-portfolio-multi-env/.github/workflows/ci-build.yaml@main
     with:
       environment: staging
     secrets: inherit
