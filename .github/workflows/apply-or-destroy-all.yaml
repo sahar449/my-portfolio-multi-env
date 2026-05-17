@@ -23,6 +23,7 @@ env:
   TF_STATE_BUCKET: eksdemo-terraform-state
   TF_LOCK_TABLE: terraform-locks
   MGMT_CLUSTER: eksdemo-prod-cluster
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
 
