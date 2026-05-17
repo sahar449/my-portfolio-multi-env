@@ -15,9 +15,9 @@ on:
 permissions:
   id-token: write
   contents: read
+  actions: write
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   AWS_REGION: us-west-2
   TERRAFORM_VERSION: 1.5.7
   TF_STATE_BUCKET: eksdemo-terraform-state
@@ -25,9 +25,10 @@ env:
   MGMT_CLUSTER: eksdemo-prod-cluster
 
 jobs:
-  # ════════════════════════════════════════════════════════════════════════════
-  # APPLY — all 4 environments in parallel
-  # ════════════════════════════════════════════════════════════════════════════
+
+  # ─────────────────────────────────────────────────────────────────
+  # APPLY PATH
+  # ─────────────────────────────────────────────────────────────────
 
   bootstrap:
     name: Bootstrap State Backend
@@ -73,6 +74,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [bootstrap]
     if: ${{ inputs.action == 'apply' }}
+    environment: dev
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v2
@@ -95,6 +97,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [bootstrap]
     if: ${{ inputs.action == 'apply' }}
+    environment: staging
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v2
@@ -116,19 +119,20 @@ jobs:
           aws eks create-access-entry \
             --cluster-name eksdemo-staging-cluster \
             --principal-arn arn:aws:iam::${{ secrets.AWS_ACCOUNT_NUMBER }}:user/${{ secrets.AWS_USER }} \
-            --region ${{ env.AWS_REGION }} 2>/dev/null || true
+            --region ${{ env.AWS_REGION }} || true
           aws eks associate-access-policy \
             --cluster-name eksdemo-staging-cluster \
             --principal-arn arn:aws:iam::${{ secrets.AWS_ACCOUNT_NUMBER }}:user/${{ secrets.AWS_USER }} \
             --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy \
             --access-scope type=cluster \
-            --region ${{ env.AWS_REGION }} 2>/dev/null || true
+            --region ${{ env.AWS_REGION }} || true
 
   apply-prod:
     name: Apply Prod
     runs-on: ubuntu-latest
     needs: [bootstrap]
     if: ${{ inputs.action == 'apply' }}
+    environment: production
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v2
@@ -150,13 +154,13 @@ jobs:
           aws eks create-access-entry \
             --cluster-name eksdemo-prod-cluster \
             --principal-arn arn:aws:iam::${{ secrets.AWS_ACCOUNT_NUMBER }}:user/${{ secrets.AWS_USER }} \
-            --region ${{ env.AWS_REGION }} 2>/dev/null || true
+            --region ${{ env.AWS_REGION }} || true
           aws eks associate-access-policy \
             --cluster-name eksdemo-prod-cluster \
             --principal-arn arn:aws:iam::${{ secrets.AWS_ACCOUNT_NUMBER }}:user/${{ secrets.AWS_USER }} \
             --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy \
             --access-scope type=cluster \
-            --region ${{ env.AWS_REGION }} 2>/dev/null || true
+            --region ${{ env.AWS_REGION }} || true
 
   trigger-cd:
     name: Trigger CD Pipeline
@@ -169,127 +173,134 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run staging-cd.yaml --repo ${{ github.repository }} --ref staging
 
-  # ════════════════════════════════════════════════════════════════════════════
-  # DESTROY — ordered: ArgoCD → pre-delete → staging/prod → dev/mgmt
-  # ════════════════════════════════════════════════════════════════════════════
+  # ─────────────────────────────────────────────────────────────────
+  # DESTROY PATH
+  # ─────────────────────────────────────────────────────────────────
 
   delete-argocd-apps:
-    name: Delete ArgoCD Apps (staging + prod)
+    name: Delete ArgoCD Apps
     runs-on: ubuntu-latest
     if: ${{ inputs.action == 'destroy' }}
+    environment: production
     continue-on-error: true
     steps:
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
-          role-session-name: github-actions-delete-argocd-apps
-
-      - name: Connect to mgmt cluster and delete ArgoCD apps
+          role-session-name: github-actions-delete-argocd
+      - name: Connect to prod cluster (ArgoCD host)
+        run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.MGMT_CLUSTER }} || true
+      - name: Delete ArgoCD applications
         run: |
-          aws eks update-kubeconfig \
-            --region ${{ env.AWS_REGION }} \
-            --name ${{ env.MGMT_CLUSTER }} 2>/dev/null || {
-            echo "Mgmt cluster not found — skipping ArgoCD cleanup"
-            exit 0
-          }
-          for app in frontend-staging backend-staging frontend-prod backend-prod; do
-            kubectl delete application "$app" -n argocd \
-              --ignore-not-found --timeout=60s 2>/dev/null || true
-            echo "Deleted (or not found): $app"
-          done
-          echo "Waiting 60s for K8s to release Load Balancers..."
-          sleep 60
+          kubectl delete applications --all -n argocd --ignore-not-found || true
+          kubectl delete appprojects --all -n argocd --ignore-not-found || true
 
   pre-delete-staging:
-    name: Pre-delete Staging (nodegroups + RDS)
+    name: Pre-delete Staging VPC Resources
     runs-on: ubuntu-latest
     needs: [delete-argocd-apps]
     if: ${{ always() && inputs.action == 'destroy' }}
+    environment: staging
     continue-on-error: true
     steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: github-actions-pre-delete-staging
-
-      - name: Delete EKS nodegroups
+      - name: Get VPC name
+        working-directory: infra/envs/staging
         run: |
-          CLUSTER="eksdemo-staging-cluster"
-          aws eks describe-cluster --name "$CLUSTER" --region ${{ env.AWS_REGION }} &>/dev/null || {
-            echo "Cluster not found — skipping"; exit 0
-          }
-          NGs=$(aws eks list-nodegroups --cluster-name "$CLUSTER" \
-            --region ${{ env.AWS_REGION }} --query 'nodegroups[]' --output text 2>/dev/null || true)
-          for ng in $NGs; do
-            aws eks delete-nodegroup --cluster-name "$CLUSTER" \
-              --nodegroup-name "$ng" --region ${{ env.AWS_REGION }} || true
-          done
-          for ng in $NGs; do
-            aws eks wait nodegroup-deleted --cluster-name "$CLUSTER" \
-              --nodegroup-name "$ng" --region ${{ env.AWS_REGION }} || true
-          done
-
-      - name: Delete RDS instances
+          terraform init -upgrade
+          VPC_NAME=$(terraform output -raw vpc_name 2>/dev/null || echo "")
+          echo "VPC_NAME=${VPC_NAME}" >> "$GITHUB_ENV"
+      - name: Cleanup VPC resources
         run: |
-          for DB in mydb staging-mydb eksdemo-staging-mydb; do
-            if aws rds describe-db-instances --db-instance-identifier "$DB" \
-                --region ${{ env.AWS_REGION }} &>/dev/null 2>&1; then
-              aws rds delete-db-instance --db-instance-identifier "$DB" \
-                --skip-final-snapshot --region ${{ env.AWS_REGION }} || true
-              aws rds wait db-instance-deleted --db-instance-identifier "$DB" \
-                --region ${{ env.AWS_REGION }} || true
-            fi
-          done
+          VPC_ID=$(aws ec2 describe-vpcs \
+            --filters "Name=tag:Name,Values=${VPC_NAME}" \
+            --query "Vpcs[0].VpcId" --output text 2>/dev/null || echo "")
+          if [ -z "${VPC_ID}" ] || [ "${VPC_ID}" = "None" ]; then exit 0; fi
+
+          LB_ARNS=$(aws elbv2 describe-load-balancers \
+            --query "LoadBalancers[?VpcId=='${VPC_ID}'].LoadBalancerArn" --output text || true)
+          for arn in ${LB_ARNS}; do aws elbv2 delete-load-balancer --load-balancer-arn "$arn" || true; done
+          [ -n "${LB_ARNS}" ] && sleep 15
+
+          TG_ARNS=$(aws elbv2 describe-target-groups \
+            --query "TargetGroups[?VpcId=='${VPC_ID}'].TargetGroupArn" --output text || true)
+          for arn in ${TG_ARNS}; do aws elbv2 delete-target-group --target-group-arn "$arn" || true; done
+
+          SGS=$(aws ec2 describe-security-groups \
+            --filters "Name=vpc-id,Values=${VPC_ID}" \
+            --query "SecurityGroups[?GroupName!='default'].GroupId" --output text || true)
+          for sg in ${SGS}; do aws ec2 delete-security-group --group-id "$sg" || true; done
+
+          ENIS=$(aws ec2 describe-network-interfaces \
+            --filters "Name=vpc-id,Values=${VPC_ID}" \
+            --query "NetworkInterfaces[?Status=='available'].NetworkInterfaceId" --output text || true)
+          for eni in ${ENIS}; do aws ec2 delete-network-interface --network-interface-id "$eni" || true; done
 
   pre-delete-prod:
-    name: Pre-delete Prod (nodegroups + RDS)
+    name: Pre-delete Prod VPC Resources
     runs-on: ubuntu-latest
     needs: [delete-argocd-apps]
+    environment: production
     if: ${{ always() && inputs.action == 'destroy' }}
     continue-on-error: true
     steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: github-actions-pre-delete-prod
-
-      - name: Delete EKS nodegroups
+      - name: Get VPC name
+        working-directory: infra/envs/prod
         run: |
-          CLUSTER="eksdemo-prod-cluster"
-          aws eks describe-cluster --name "$CLUSTER" --region ${{ env.AWS_REGION }} &>/dev/null || {
-            echo "Cluster not found — skipping"; exit 0
-          }
-          NGs=$(aws eks list-nodegroups --cluster-name "$CLUSTER" \
-            --region ${{ env.AWS_REGION }} --query 'nodegroups[]' --output text 2>/dev/null || true)
-          for ng in $NGs; do
-            aws eks delete-nodegroup --cluster-name "$CLUSTER" \
-              --nodegroup-name "$ng" --region ${{ env.AWS_REGION }} || true
-          done
-          for ng in $NGs; do
-            aws eks wait nodegroup-deleted --cluster-name "$CLUSTER" \
-              --nodegroup-name "$ng" --region ${{ env.AWS_REGION }} || true
-          done
-
-      - name: Delete RDS instances
+          terraform init -upgrade
+          VPC_NAME=$(terraform output -raw vpc_name 2>/dev/null || echo "")
+          echo "VPC_NAME=${VPC_NAME}" >> "$GITHUB_ENV"
+      - name: Cleanup VPC resources
         run: |
-          for DB in mydb prod-mydb; do
-            if aws rds describe-db-instances --db-instance-identifier "$DB" \
-                --region ${{ env.AWS_REGION }} &>/dev/null 2>&1; then
-              aws rds delete-db-instance --db-instance-identifier "$DB" \
-                --skip-final-snapshot --region ${{ env.AWS_REGION }} || true
-              aws rds wait db-instance-deleted --db-instance-identifier "$DB" \
-                --region ${{ env.AWS_REGION }} || true
-            fi
-          done
+          VPC_ID=$(aws ec2 describe-vpcs \
+            --filters "Name=tag:Name,Values=${VPC_NAME}" \
+            --query "Vpcs[0].VpcId" --output text 2>/dev/null || echo "")
+          if [ -z "${VPC_ID}" ] || [ "${VPC_ID}" = "None" ]; then exit 0; fi
+
+          LB_ARNS=$(aws elbv2 describe-load-balancers \
+            --query "LoadBalancers[?VpcId=='${VPC_ID}'].LoadBalancerArn" --output text || true)
+          for arn in ${LB_ARNS}; do aws elbv2 delete-load-balancer --load-balancer-arn "$arn" || true; done
+          [ -n "${LB_ARNS}" ] && sleep 15
+
+          TG_ARNS=$(aws elbv2 describe-target-groups \
+            --query "TargetGroups[?VpcId=='${VPC_ID}'].TargetGroupArn" --output text || true)
+          for arn in ${TG_ARNS}; do aws elbv2 delete-target-group --target-group-arn "$arn" || true; done
+
+          SGS=$(aws ec2 describe-security-groups \
+            --filters "Name=vpc-id,Values=${VPC_ID}" \
+            --query "SecurityGroups[?GroupName!='default'].GroupId" --output text || true)
+          for sg in ${SGS}; do aws ec2 delete-security-group --group-id "$sg" || true; done
+
+          ENIS=$(aws ec2 describe-network-interfaces \
+            --filters "Name=vpc-id,Values=${VPC_ID}" \
+            --query "NetworkInterfaces[?Status=='available'].NetworkInterfaceId" --output text || true)
+          for eni in ${ENIS}; do aws ec2 delete-network-interface --network-interface-id "$eni" || true; done
 
   destroy-staging:
     name: Destroy Staging
     runs-on: ubuntu-latest
     needs: [pre-delete-staging]
     if: ${{ always() && inputs.action == 'destroy' }}
+    environment: staging
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v2
@@ -303,31 +314,10 @@ jobs:
       - name: Terraform Init
         working-directory: infra/envs/staging
         run: terraform init -upgrade
-      - name: Cleanup orphaned VPC resources
-        working-directory: infra/envs/staging
-        run: |
-          VPC_NAME=$(terraform output -raw vpc_name 2>/dev/null || echo '')
-          [ -z "$VPC_NAME" ] && echo "No VPC output — skipping" && exit 0
-          VPC_ID=$(aws ec2 describe-vpcs --region ${{ env.AWS_REGION }} \
-            --filters "Name=tag:Name,Values=${VPC_NAME}" \
-            --query "Vpcs[0].VpcId" --output text)
-          [ "$VPC_ID" = "None" ] && exit 0
-          LB_ARNS=$(aws elbv2 describe-load-balancers --region ${{ env.AWS_REGION }} \
-            --query "LoadBalancers[?VpcId=='$VPC_ID'].LoadBalancerArn" --output text)
-          for arn in $LB_ARNS; do
-            aws elbv2 delete-load-balancer --load-balancer-arn "$arn" --region ${{ env.AWS_REGION }} || true
-          done
-          [ -n "$LB_ARNS" ] && sleep 15 || true
-          TG_ARNS=$(aws elbv2 describe-target-groups --region ${{ env.AWS_REGION }} \
-            --query "TargetGroups[?VpcId=='$VPC_ID'].TargetGroupArn" --output text)
-          for arn in $TG_ARNS; do
-            aws elbv2 delete-target-group --target-group-arn "$arn" --region ${{ env.AWS_REGION }} || true
-          done
       - name: Terraform Destroy
         working-directory: infra/envs/staging
         run: terraform destroy -auto-approve
       - name: Cleanup state
-        if: always()
         run: aws s3 rm s3://${{ env.TF_STATE_BUCKET }}/eksdemo/staging/ --recursive || true
 
   destroy-prod:
@@ -335,6 +325,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [pre-delete-prod]
     if: ${{ always() && inputs.action == 'destroy' }}
+    environment: production
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v2
@@ -348,31 +340,10 @@ jobs:
       - name: Terraform Init
         working-directory: infra/envs/prod
         run: terraform init -upgrade
-      - name: Cleanup orphaned VPC resources
-        working-directory: infra/envs/prod
-        run: |
-          VPC_NAME=$(terraform output -raw vpc_name 2>/dev/null || echo '')
-          [ -z "$VPC_NAME" ] && echo "No VPC output — skipping" && exit 0
-          VPC_ID=$(aws ec2 describe-vpcs --region ${{ env.AWS_REGION }} \
-            --filters "Name=tag:Name,Values=${VPC_NAME}" \
-            --query "Vpcs[0].VpcId" --output text)
-          [ "$VPC_ID" = "None" ] && exit 0
-          LB_ARNS=$(aws elbv2 describe-load-balancers --region ${{ env.AWS_REGION }} \
-            --query "LoadBalancers[?VpcId=='$VPC_ID'].LoadBalancerArn" --output text)
-          for arn in $LB_ARNS; do
-            aws elbv2 delete-load-balancer --load-balancer-arn "$arn" --region ${{ env.AWS_REGION }} || true
-          done
-          [ -n "$LB_ARNS" ] && sleep 15 || true
-          TG_ARNS=$(aws elbv2 describe-target-groups --region ${{ env.AWS_REGION }} \
-            --query "TargetGroups[?VpcId=='$VPC_ID'].TargetGroupArn" --output text)
-          for arn in $TG_ARNS; do
-            aws elbv2 delete-target-group --target-group-arn "$arn" --region ${{ env.AWS_REGION }} || true
-          done
       - name: Terraform Destroy
         working-directory: infra/envs/prod
         run: terraform destroy -auto-approve
       - name: Cleanup state
-        if: always()
         run: aws s3 rm s3://${{ env.TF_STATE_BUCKET }}/eksdemo/prod/ --recursive || true
 
   destroy-dev:
@@ -380,6 +351,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [destroy-staging, destroy-prod]
     if: ${{ always() && inputs.action == 'destroy' }}
+    environment: dev
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v2
@@ -390,13 +362,41 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: github-actions-destroy-dev
-      - name: Terraform Init
+      - name: Get VPC name
         working-directory: infra/envs/dev
-        run: terraform init -upgrade
+        run: |
+          terraform init -upgrade
+          VPC_NAME=$(terraform output -raw vpc_name 2>/dev/null || echo "")
+          echo "VPC_NAME=${VPC_NAME}" >> "$GITHUB_ENV"
+      - name: Cleanup VPC resources
+        run: |
+          VPC_ID=$(aws ec2 describe-vpcs \
+            --filters "Name=tag:Name,Values=${VPC_NAME}" \
+            --query "Vpcs[0].VpcId" --output text 2>/dev/null || echo "")
+          if [ -z "${VPC_ID}" ] || [ "${VPC_ID}" = "None" ]; then
+            echo "No VPC found, skipping cleanup"
+          else
+            LB_ARNS=$(aws elbv2 describe-load-balancers \
+              --query "LoadBalancers[?VpcId=='${VPC_ID}'].LoadBalancerArn" --output text || true)
+            for arn in ${LB_ARNS}; do aws elbv2 delete-load-balancer --load-balancer-arn "$arn" || true; done
+            [ -n "${LB_ARNS}" ] && sleep 15
+
+            TG_ARNS=$(aws elbv2 describe-target-groups \
+              --query "TargetGroups[?VpcId=='${VPC_ID}'].TargetGroupArn" --output text || true)
+            for arn in ${TG_ARNS}; do aws elbv2 delete-target-group --target-group-arn "$arn" || true; done
+
+            SGS=$(aws ec2 describe-security-groups \
+              --filters "Name=vpc-id,Values=${VPC_ID}" \
+              --query "SecurityGroups[?GroupName!='default'].GroupId" --output text || true)
+            for sg in ${SGS}; do aws ec2 delete-security-group --group-id "$sg" || true; done
+
+            ENIS=$(aws ec2 describe-network-interfaces \
+              --filters "Name=vpc-id,Values=${VPC_ID}" \
+              --query "NetworkInterfaces[?Status=='available'].NetworkInterfaceId" --output text || true)
+            for eni in ${ENIS}; do aws ec2 delete-network-interface --network-interface-id "$eni" || true; done
+          fi
       - name: Terraform Destroy
         working-directory: infra/envs/dev
         run: terraform destroy -auto-approve
       - name: Cleanup state
-        if: always()
         run: aws s3 rm s3://${{ env.TF_STATE_BUCKET }}/eksdemo/dev/ --recursive || true
-

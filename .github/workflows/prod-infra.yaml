@@ -1,15 +1,19 @@
-name: Infra Prod
+name: Infra
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'infra/envs/prod/**'
-      - 'infra/modules/**'
   workflow_dispatch:
     inputs:
+      environment:
+        description: "Environment"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - staging
+          - production
       action:
-        description: "Choose action"
+        description: "Action"
         required: true
         default: "apply"
         type: choice
@@ -20,28 +24,24 @@ on:
 permissions:
   id-token: write
   contents: read
-  actions: write
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   AWS_REGION: us-west-2
   TERRAFORM_VERSION: 1.5.7
   TF_STATE_BUCKET: eksdemo-terraform-state
   TF_LOCK_TABLE: terraform-locks
-  ENV_DIR: infra/envs/prod
-  EKS_CLUSTER: eksdemo-prod-cluster
 
 jobs:
   bootstrap:
     name: Bootstrap State Backend
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.action == 'apply' || github.event_name == 'push' }}
+    if: ${{ inputs.action == 'apply' }}
     steps:
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
-          role-session-name: github-actions-bootstrap-prod
+          role-session-name: github-actions-bootstrap-${{ inputs.environment }}
 
       - name: Create S3 bucket for Terraform state
         run: |
@@ -74,20 +74,20 @@ jobs:
   fmt:
     name: Terraform Format
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.action == 'apply' || github.event_name == 'push' }}
+    if: ${{ inputs.action == 'apply' }}
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v2
         with:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
       - name: terraform fmt
-        working-directory: ${{ env.ENV_DIR }}
+        working-directory: infra/envs/${{ inputs.environment }}
         run: terraform fmt -check -recursive
 
   tflint:
     name: TFLint
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.action == 'apply' || github.event_name == 'push' }}
+    if: ${{ inputs.action == 'apply' }}
     steps:
       - uses: actions/checkout@v4
       - uses: terraform-linters/setup-tflint@v4
@@ -97,24 +97,24 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
-          role-session-name: github-actions-tflint-prod
+          role-session-name: github-actions-tflint-${{ inputs.environment }}
       - name: Init tflint
-        working-directory: ${{ env.ENV_DIR }}
+        working-directory: infra/envs/${{ inputs.environment }}
         run: tflint --init --config ../../.tflint.hcl
       - name: Run tflint
-        working-directory: ${{ env.ENV_DIR }}
+        working-directory: infra/envs/${{ inputs.environment }}
         run: tflint --minimum-failure-severity=error --config ../../.tflint.hcl
 
   trivy-scan:
     name: Trivy IaC Scan
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.action == 'apply' || github.event_name == 'push' }}
+    if: ${{ inputs.action == 'apply' }}
     steps:
       - uses: actions/checkout@v4
       - uses: aquasecurity/trivy-action@master
         with:
           scan-type: config
-          scan-ref: ${{ env.ENV_DIR }}/
+          scan-ref: infra/envs/${{ inputs.environment }}/
           scanners: config,secret
           format: table
           severity: CRITICAL,HIGH,MEDIUM,LOW
@@ -134,19 +134,20 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
-          role-session-name: github-actions-validate-prod
+          role-session-name: github-actions-validate-${{ inputs.environment }}
       - name: terraform init
-        working-directory: ${{ env.ENV_DIR }}
+        working-directory: infra/envs/${{ inputs.environment }}
         run: terraform init -upgrade
       - name: terraform validate
-        working-directory: ${{ env.ENV_DIR }}
+        working-directory: infra/envs/${{ inputs.environment }}
         run: terraform validate
 
   apply:
     name: Terraform Apply
     runs-on: ubuntu-latest
     needs: [fmt, validate, tflint, trivy-scan, bootstrap]
-    if: ${{ github.event.inputs.action == 'apply' || github.event_name == 'push' }}
+    if: ${{ inputs.action == 'apply' }}
+    environment: ${{ inputs.environment }}
     steps:
       - uses: actions/checkout@v4
 
@@ -158,33 +159,39 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
-          role-session-name: github-actions-infra-prod
+          role-session-name: github-actions-infra-${{ inputs.environment }}
 
       - name: Terraform Init
-        working-directory: ${{ env.ENV_DIR }}
+        working-directory: infra/envs/${{ inputs.environment }}
         run: terraform init -upgrade
 
       - name: Terraform Apply
-        working-directory: ${{ env.ENV_DIR }}
+        working-directory: infra/envs/${{ inputs.environment }}
         run: terraform apply -auto-approve
 
       - name: Grant admin user cluster access
         run: |
+          ENV="${{ inputs.environment }}"
+          CLUSTER_NAME="eksdemo-${ENV}-cluster"
+          PRINCIPAL="arn:aws:iam::${{ secrets.AWS_ACCOUNT_NUMBER }}:user/${{ secrets.AWS_USER }}"
+
           aws eks create-access-entry \
-            --cluster-name ${{ env.EKS_CLUSTER }} \
-            --principal-arn arn:aws:iam::${{ secrets.AWS_ACCOUNT_NUMBER }}:user/${{ secrets.AWS_USER }} \
-            --region ${{ env.AWS_REGION }} 2>/dev/null || true
+            --cluster-name "${CLUSTER_NAME}" \
+            --principal-arn "${PRINCIPAL}" \
+            --region ${{ env.AWS_REGION }} || true
+
           aws eks associate-access-policy \
-            --cluster-name ${{ env.EKS_CLUSTER }} \
-            --principal-arn arn:aws:iam::${{ secrets.AWS_ACCOUNT_NUMBER }}:user/${{ secrets.AWS_USER }} \
+            --cluster-name "${CLUSTER_NAME}" \
+            --principal-arn "${PRINCIPAL}" \
             --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy \
             --access-scope type=cluster \
-            --region ${{ env.AWS_REGION }} 2>/dev/null || true
+            --region ${{ env.AWS_REGION }} || true
 
   destroy:
     name: Terraform Destroy
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.action == 'destroy' }}
+    if: ${{ inputs.action == 'destroy' }}
+    environment: ${{ inputs.environment }}
     steps:
       - uses: actions/checkout@v4
 
@@ -196,42 +203,47 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
-          role-session-name: github-actions-infra-destroy-prod
+          role-session-name: github-actions-infra-destroy-${{ inputs.environment }}
 
-      - name: Read VPC name from Terraform
-        working-directory: ${{ env.ENV_DIR }}
+      - name: Get VPC name
+        working-directory: infra/envs/${{ inputs.environment }}
         run: |
           terraform init -upgrade
-          echo "VPC_NAME=$(terraform output -raw vpc_name)" >> $GITHUB_ENV
+          VPC_NAME=$(terraform output -raw vpc_name 2>/dev/null || echo "")
+          echo "VPC_NAME=${VPC_NAME}" >> "$GITHUB_ENV"
 
       - name: Cleanup VPC resources
         run: |
           VPC_ID=$(aws ec2 describe-vpcs \
-            --filters "Name=tag:Name,Values=${{ env.VPC_NAME }}" \
-            --query "Vpcs[0].VpcId" --output text)
+            --filters "Name=tag:Name,Values=${VPC_NAME}" \
+            --query "Vpcs[0].VpcId" --output text 2>/dev/null || echo "")
+          if [ -z "${VPC_ID}" ] || [ "${VPC_ID}" = "None" ]; then
+            echo "No VPC found — skipping cleanup"
+          else
+            LB_ARNS=$(aws elbv2 describe-load-balancers \
+              --query "LoadBalancers[?VpcId=='${VPC_ID}'].LoadBalancerArn" --output text || true)
+            for arn in ${LB_ARNS}; do aws elbv2 delete-load-balancer --load-balancer-arn "$arn" || true; done
+            [ -n "${LB_ARNS}" ] && sleep 15
 
-          LB_ARNS=$(aws elbv2 describe-load-balancers \
-            --query "LoadBalancers[?VpcId=='$VPC_ID'].LoadBalancerArn" --output text)
-          for arn in $LB_ARNS; do aws elbv2 delete-load-balancer --load-balancer-arn "$arn" || true; done
-          [ -n "$LB_ARNS" ] && sleep 15
+            TG_ARNS=$(aws elbv2 describe-target-groups \
+              --query "TargetGroups[?VpcId=='${VPC_ID}'].TargetGroupArn" --output text || true)
+            for arn in ${TG_ARNS}; do aws elbv2 delete-target-group --target-group-arn "$arn" || true; done
 
-          TG_ARNS=$(aws elbv2 describe-target-groups \
-            --query "TargetGroups[?VpcId=='$VPC_ID'].TargetGroupArn" --output text)
-          for arn in $TG_ARNS; do aws elbv2 delete-target-group --target-group-arn "$arn" || true; done
+            SGS=$(aws ec2 describe-security-groups \
+              --filters "Name=vpc-id,Values=${VPC_ID}" \
+              --query "SecurityGroups[?GroupName!='default'].GroupId" --output text || true)
+            for sg in ${SGS}; do aws ec2 delete-security-group --group-id "$sg" || true; done
 
-          SGS=$(aws ec2 describe-security-groups \
-            --filters "Name=vpc-id,Values=$VPC_ID" \
-            --query "SecurityGroups[?GroupName!='default'].GroupId" --output text)
-          for sg in $SGS; do aws ec2 delete-security-group --group-id "$sg" || true; done
-
-          ENIS=$(aws ec2 describe-network-interfaces \
-            --filters "Name=vpc-id,Values=$VPC_ID" \
-            --query "NetworkInterfaces[?Status=='available'].NetworkInterfaceId" --output text)
-          for eni in $ENIS; do aws ec2 delete-network-interface --network-interface-id "$eni" || true; done
+            ENIS=$(aws ec2 describe-network-interfaces \
+              --filters "Name=vpc-id,Values=${VPC_ID}" \
+              --query "NetworkInterfaces[?Status=='available'].NetworkInterfaceId" --output text || true)
+            for eni in ${ENIS}; do aws ec2 delete-network-interface --network-interface-id "$eni" || true; done
+          fi
 
       - name: Terraform Destroy
-        working-directory: ${{ env.ENV_DIR }}
+        working-directory: infra/envs/${{ inputs.environment }}
         run: terraform destroy -auto-approve
 
       - name: Cleanup state
-        run: aws s3 rm s3://${{ env.TF_STATE_BUCKET }}/eksdemo/prod/ --recursive || true
+        run: |
+          aws s3 rm s3://${{ env.TF_STATE_BUCKET }}/eksdemo/${{ inputs.environment }}/ --recursive || true
