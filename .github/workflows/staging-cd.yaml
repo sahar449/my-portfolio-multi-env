@@ -12,7 +12,7 @@ permissions:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   AWS_REGION: us-west-2
-  MGMT_CLUSTER: eksdemo-mgmt-cluster
+  MGMT_CLUSTER: eksdemo-prod-cluster
   TARGET_CLUSTER: eksdemo-staging-cluster
 
 jobs:
@@ -74,12 +74,12 @@ jobs:
         run: |
           MGMT_CONTEXT=$(kubectl config current-context)
 
-          echo "Waiting for ArgoCD LoadBalancer hostname..."
+          echo "Waiting for ArgoCD Ingress hostname..."
           for i in $(seq 1 24); do
-            ARGOCD_SERVER=$(kubectl get svc argocd-server -n argocd \
+            ARGOCD_SERVER=$(kubectl get ingress argocd-server -n argocd \
               -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)
             [ -n "$ARGOCD_SERVER" ] && break
-            [ "$i" -eq 24 ] && echo "Timed out waiting for ArgoCD LB" && exit 1
+            [ "$i" -eq 24 ] && echo "Timed out waiting for ArgoCD Ingress" && exit 1
             echo "  attempt $i/24 — not ready yet, waiting 15s..."
             sleep 15
           done

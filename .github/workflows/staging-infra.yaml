@@ -181,10 +181,6 @@ jobs:
             --access-scope type=cluster \
             --region ${{ env.AWS_REGION }} 2>/dev/null || true
 
-      - name: Trigger CI Staging
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh workflow run staging-ci.yaml --ref staging
 
   destroy:
     name: Terraform Destroy
@@ -212,7 +208,7 @@ jobs:
       - name: Cleanup VPC resources
         run: |
           VPC_ID=$(aws ec2 describe-vpcs \
-            --filters "Name=tag:Name,Values=${{ env.VPC_NAME }}" \
+            --filters "Name=tag:Name,Values=${VPC_NAME}" \
             --query "Vpcs[0].VpcId" --output text)
 
           LB_ARNS=$(aws elbv2 describe-load-balancers \

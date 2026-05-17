@@ -15,7 +15,7 @@ permissions:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   AWS_REGION: us-west-2
-  MGMT_CLUSTER: eksdemo-mgmt-cluster
+  MGMT_CLUSTER: eksdemo-prod-cluster
   TARGET_CLUSTER: eksdemo-prod-cluster
 
 jobs:
@@ -72,36 +72,6 @@ jobs:
           curl -sSL -o /usr/local/bin/argocd \
             https://github.com/argoproj/argo-cd/releases/download/v2.11.0/argocd-linux-amd64
           chmod +x /usr/local/bin/argocd
-
-      # ── Register prod cluster via ArgoCD CLI ──────────────────────────────
-      - name: Register prod cluster with ArgoCD
-        run: |
-          MGMT_CONTEXT=$(kubectl config current-context)
-
-          ARGOCD_SERVER=$(kubectl get svc argocd-server -n argocd \
-            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-
-          ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret \
-            -o jsonpath="{.data.password}" | base64 -d)
-
-          argocd login "$ARGOCD_SERVER" \
-            --username admin \
-            --password "$ARGOCD_PASSWORD" \
-            --insecure \
-            --grpc-web
-
-          aws eks update-kubeconfig \
-            --region ${{ env.AWS_REGION }} \
-            --name ${{ env.TARGET_CLUSTER }}
-
-          TARGET_CONTEXT=$(kubectl config current-context)
-
-          argocd cluster get ${{ env.TARGET_CLUSTER }} 2>/dev/null || \
-            argocd cluster add "$TARGET_CONTEXT" \
-              --name ${{ env.TARGET_CLUSTER }} \
-              --yes
-
-          kubectl config use-context "$MGMT_CONTEXT"
 
       # ── Update image tag in Git ────────────────────────────────────────────
       - name: Update image tag in Git

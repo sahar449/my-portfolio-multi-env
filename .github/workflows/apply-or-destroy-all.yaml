@@ -22,7 +22,7 @@ env:
   TERRAFORM_VERSION: 1.5.7
   TF_STATE_BUCKET: eksdemo-terraform-state
   TF_LOCK_TABLE: terraform-locks
-  MGMT_CLUSTER: eksdemo-mgmt-cluster
+  MGMT_CLUSTER: eksdemo-prod-cluster
 
 jobs:
   # ════════════════════════════════════════════════════════════════════════════
@@ -89,40 +89,6 @@ jobs:
       - name: Terraform Apply
         working-directory: infra/envs/dev
         run: terraform apply -auto-approve
-
-  apply-mgmt:
-    name: Apply Mgmt
-    runs-on: ubuntu-latest
-    needs: [bootstrap]
-    if: ${{ inputs.action == 'apply' }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v2
-        with:
-          terraform_version: ${{ env.TERRAFORM_VERSION }}
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ env.AWS_REGION }}
-          role-session-name: github-actions-apply-mgmt
-      - name: Terraform Init
-        working-directory: infra/envs/mgmt
-        run: terraform init -upgrade
-      - name: Terraform Apply
-        working-directory: infra/envs/mgmt
-        run: terraform apply -auto-approve
-      - name: Grant admin user cluster access
-        run: |
-          aws eks create-access-entry \
-            --cluster-name ${{ env.MGMT_CLUSTER }} \
-            --principal-arn arn:aws:iam::${{ secrets.AWS_ACCOUNT_NUMBER }}:user/${{ secrets.AWS_USER }} \
-            --region ${{ env.AWS_REGION }} 2>/dev/null || true
-          aws eks associate-access-policy \
-            --cluster-name ${{ env.MGMT_CLUSTER }} \
-            --principal-arn arn:aws:iam::${{ secrets.AWS_ACCOUNT_NUMBER }}:user/${{ secrets.AWS_USER }} \
-            --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy \
-            --access-scope type=cluster \
-            --region ${{ env.AWS_REGION }} 2>/dev/null || true
 
   apply-staging:
     name: Apply Staging
@@ -423,43 +389,3 @@ jobs:
         if: always()
         run: aws s3 rm s3://${{ env.TF_STATE_BUCKET }}/eksdemo/dev/ --recursive || true
 
-  destroy-mgmt:
-    name: Destroy Mgmt (ArgoCD hub)
-    runs-on: ubuntu-latest
-    needs: [destroy-staging, destroy-prod]
-    if: ${{ always() && inputs.action == 'destroy' }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v2
-        with:
-          terraform_version: ${{ env.TERRAFORM_VERSION }}
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ env.AWS_REGION }}
-          role-session-name: github-actions-destroy-mgmt
-      - name: Delete mgmt EKS nodegroups before Terraform
-        run: |
-          CLUSTER="${{ env.MGMT_CLUSTER }}"
-          aws eks describe-cluster --name "$CLUSTER" --region ${{ env.AWS_REGION }} &>/dev/null || {
-            echo "Mgmt cluster not found — skipping"; exit 0
-          }
-          NGs=$(aws eks list-nodegroups --cluster-name "$CLUSTER" \
-            --region ${{ env.AWS_REGION }} --query 'nodegroups[]' --output text 2>/dev/null || true)
-          for ng in $NGs; do
-            aws eks delete-nodegroup --cluster-name "$CLUSTER" \
-              --nodegroup-name "$ng" --region ${{ env.AWS_REGION }} || true
-          done
-          for ng in $NGs; do
-            aws eks wait nodegroup-deleted --cluster-name "$CLUSTER" \
-              --nodegroup-name "$ng" --region ${{ env.AWS_REGION }} || true
-          done
-      - name: Terraform Init
-        working-directory: infra/envs/mgmt
-        run: terraform init -upgrade
-      - name: Terraform Destroy
-        working-directory: infra/envs/mgmt
-        run: terraform destroy -auto-approve
-      - name: Cleanup state
-        if: always()
-        run: aws s3 rm s3://${{ env.TF_STATE_BUCKET }}/eksdemo/mgmt/ --recursive || true
