@@ -56,11 +56,11 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           for service in frontend backend; do
-            docker pull  ${ECR}/${service}-dev:latest
-            docker tag   ${ECR}/${service}-dev:latest ${ECR}/${service}-staging:${IMAGE_TAG}
-            docker tag   ${ECR}/${service}-dev:latest ${ECR}/${service}-staging:latest
-            docker push  ${ECR}/${service}-staging:${IMAGE_TAG}
-            docker push  ${ECR}/${service}-staging:latest
+            docker pull  "${ECR}/${service}-dev:latest"
+            docker tag   "${ECR}/${service}-dev:latest" "${ECR}/${service}-staging:${IMAGE_TAG}"
+            docker tag   "${ECR}/${service}-dev:latest" "${ECR}/${service}-staging:latest"
+            docker push  "${ECR}/${service}-staging:${IMAGE_TAG}"
+            docker push  "${ECR}/${service}-staging:latest"
           done
 
       - name: Connect to prod cluster (ArgoCD host)
@@ -218,11 +218,11 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           for service in frontend backend; do
-            docker pull  ${ECR}/${service}-staging:latest
-            docker tag   ${ECR}/${service}-staging:latest ${ECR}/${service}-prod:${IMAGE_TAG}
-            docker tag   ${ECR}/${service}-staging:latest ${ECR}/${service}-prod:latest
-            docker push  ${ECR}/${service}-prod:${IMAGE_TAG}
-            docker push  ${ECR}/${service}-prod:latest
+            docker pull  "${ECR}/${service}-staging:latest"
+            docker tag   "${ECR}/${service}-staging:latest" "${ECR}/${service}-prod:${IMAGE_TAG}"
+            docker tag   "${ECR}/${service}-staging:latest" "${ECR}/${service}-prod:latest"
+            docker push  "${ECR}/${service}-prod:${IMAGE_TAG}"
+            docker push  "${ECR}/${service}-prod:latest"
           done
 
       - name: Connect to prod cluster
