@@ -1,20 +1,45 @@
 apiVersion: argoproj.io/v1alpha1
-kind: Application
+kind: ApplicationSet
 metadata:
-  name: root
+  name: portfolio
   namespace: argocd
-  finalizers:
-    - resources-finalizer.argocd.argoproj.io
 spec:
-  project: default
-  source:
-    repoURL: https://github.com/sahar449/my-portfolio.git
-    targetRevision: HEAD
-    path: ArgoCD/apps
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: argocd
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
+  generators:
+    - matrix:
+        generators:
+          - list:
+              elements:
+                - env: staging
+                  cluster: eksdemo-staging-cluster
+                - env: prod
+                  cluster: in-cluster
+          - list:
+              elements:
+                - service: frontend
+                  wave: "2"
+                - service: backend
+                  wave: "3"
+  template:
+    metadata:
+      name: '{{service}}-{{env}}'
+      namespace: argocd
+      annotations:
+        argocd.argoproj.io/sync-wave: '{{wave}}'
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/sahar449/my-portfolio-multi-env.git
+        targetRevision: HEAD
+        path: 'ArgoCD/{{service}}/helm_chart'
+        helm:
+          valueFiles:
+            - values.{{env}}.yaml
+      destination:
+        name: '{{cluster}}'
+        namespace: default
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=false
