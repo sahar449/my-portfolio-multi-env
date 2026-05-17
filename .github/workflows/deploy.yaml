@@ -63,12 +63,11 @@ jobs:
             docker push  "${ECR}/${service}-staging:latest"
           done
 
-      - name: Install cluster components on staging
+      - name: Install ALB controller on staging
         run: |
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name eksdemo-staging-cluster
 
           helm repo add eks https://aws.github.io/eks-charts
-          helm repo add bitnami https://charts.bitnami.com/bitnami
           helm repo update
 
           helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
@@ -82,30 +81,22 @@ jobs:
             --set vpcId=vpc-07712d7b0ffbf9c54 \
             --wait --timeout 5m || true
 
-          helm upgrade --install external-dns bitnami/external-dns \
-            --namespace kube-system \
-            --create-namespace \
-            --set provider=aws \
-            --set aws.region=${{ env.AWS_REGION }} \
-            --set "serviceAccount.annotations.eks\.amazonaws\.com/role-arn=arn:aws:iam::${{ secrets.AWS_ACCOUNT_NUMBER }}:role/eksdemo-staging-cluster-external-dns-role" \
-            --set domainFilters[0]=saharbittman.com \
-            --set policy=sync \
-            --wait --timeout 5m || true
+      - name: Enable external-dns EKS addon on staging
+        run: |
+          aws eks create-addon \
+            --cluster-name eksdemo-staging-cluster \
+            --addon-name external-dns \
+            --service-account-role-arn arn:aws:iam::${{ secrets.AWS_ACCOUNT_NUMBER }}:role/eksdemo-staging-cluster-external-dns-role \
+            --resolve-conflicts OVERWRITE \
+            --region ${{ env.AWS_REGION }} || true
+
+          aws eks wait addon-active \
+            --cluster-name eksdemo-staging-cluster \
+            --addon-name external-dns \
+            --region ${{ env.AWS_REGION }} || true
 
       - name: Connect to prod cluster (ArgoCD host)
         run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name eksdemo-prod-cluster
-
-      - name: Install ArgoCD via Helm
-        run: |
-          helm repo add argo https://argoproj.github.io/argo-helm
-          helm repo update
-          helm upgrade --install argocd argo/argo-cd \
-            --namespace argocd \
-            --create-namespace \
-            --version 7.8.23 \
-            --wait \
-            --timeout 10m \
-            -f ArgoCD/argocd-server-values.yaml
 
       - name: Install ArgoCD CLI
         run: |
@@ -159,8 +150,8 @@ jobs:
           git diff --staged --quiet || git commit -m "cd: deploy to staging image ${IMAGE_TAG}"
           git push
 
-      - name: Apply ArgoCD staging apps
-        run: kubectl apply -f ArgoCD/staging/root-app.yaml
+      - name: Apply ArgoCD apps
+        run: kubectl apply -f ArgoCD/root-app.yaml
 
       - name: Wait for apps to be healthy
         run: |
@@ -257,18 +248,6 @@ jobs:
       - name: Connect to prod cluster
         run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name eksdemo-prod-cluster
 
-      - name: Install ArgoCD via Helm
-        run: |
-          helm repo add argo https://argoproj.github.io/argo-helm
-          helm repo update
-          helm upgrade --install argocd argo/argo-cd \
-            --namespace argocd \
-            --create-namespace \
-            --version 7.8.23 \
-            --wait \
-            --timeout 10m \
-            -f ArgoCD/argocd-server-values.yaml
-
       - name: Update image tag in Git
         env:
           IMAGE_TAG: ${{ github.sha }}
@@ -291,8 +270,8 @@ jobs:
           git diff --staged --quiet || git commit -m "cd: deploy to production image ${IMAGE_TAG}"
           git push
 
-      - name: Apply ArgoCD prod apps
-        run: kubectl apply -f ArgoCD/prod/root-app.yaml
+      - name: Apply ArgoCD apps
+        run: kubectl apply -f ArgoCD/root-app.yaml
 
       - name: Wait for apps to be healthy
         run: |
