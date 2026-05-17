@@ -6,22 +6,19 @@ on:
       - staging
   workflow_dispatch:
     inputs:
-      github-env:
-        description: "GitHub Environment"
+      stage:
+        description: "Stage to run"
         required: true
-        default: "staging"
+        default: "all"
         type: choice
         options:
-          - staging
-          - production
-  workflow_call:
-    inputs:
-      github-env:
-        required: true
-        type: string
+          - all        # staging → QA → production
+          - staging    # deploy to staging only
+          - qa         # run QA & E2E tests only
+          - production # deploy to production only
 
 concurrency:
-  group: deploy-${{ inputs.github-env || 'staging' }}-${{ github.ref }}
+  group: deploy-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -38,6 +35,7 @@ jobs:
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.stage == 'all' || inputs.stage == 'staging' }}
     environment: staging
     steps:
       - uses: actions/checkout@v4
@@ -155,6 +153,7 @@ jobs:
     name: QA & E2E Tests
     runs-on: ubuntu-latest
     needs: [deploy-staging]
+    if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.stage == 'all' || inputs.stage == 'qa') && needs.deploy-staging.result != 'failure' }}
     environment: staging
     steps:
       - uses: actions/checkout@v4
@@ -198,7 +197,7 @@ jobs:
     name: Deploy to Production
     runs-on: ubuntu-latest
     needs: [qa-tests]
-    if: ${{ needs.qa-tests.result == 'success' }}
+    if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.stage == 'all' || inputs.stage == 'production') && needs.qa-tests.result != 'failure' }}
     environment: production
     steps:
       - uses: actions/checkout@v4
