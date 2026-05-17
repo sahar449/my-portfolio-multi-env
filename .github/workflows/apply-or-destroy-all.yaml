@@ -145,10 +145,10 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: github-actions-apply-prod
       - name: Terraform Init
-        working-directory: infra/envs/prod
+        working-directory: infra/envs/production
         run: terraform init -upgrade
       - name: Terraform Apply
-        working-directory: infra/envs/prod
+        working-directory: infra/envs/production
         run: terraform apply -auto-approve
       - name: Grant admin user cluster access
         run: |
@@ -264,7 +264,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: github-actions-pre-delete-prod
       - name: Get VPC name
-        working-directory: infra/envs/prod
+        working-directory: infra/envs/production
         run: |
           terraform init -upgrade
           VPC_NAME=$(terraform output -raw vpc_name 2>/dev/null || echo "")
@@ -339,10 +339,10 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: github-actions-destroy-prod
       - name: Terraform Init
-        working-directory: infra/envs/prod
+        working-directory: infra/envs/production
         run: terraform init -upgrade
       - name: Terraform Destroy
-        working-directory: infra/envs/prod
+        working-directory: infra/envs/production
         run: terraform destroy -auto-approve
       - name: Cleanup state
         run: aws s3 rm s3://${{ env.TF_STATE_BUCKET }}/eksdemo/prod/ --recursive || true
