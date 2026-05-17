@@ -52,30 +52,6 @@ module "monitoring" {
 # Cluster components — installed once via Terraform, not per-deploy
 # ─────────────────────────────────────────────────────────────────
 
-resource "helm_release" "alb_controller" {
-  name       = "aws-load-balancer-controller"
-  repository = "https://aws.github.io/eks-charts"
-  chart      = "aws-load-balancer-controller"
-  namespace  = "kube-system"
-  version    = "1.8.3"
-
-  values = [<<-EOT
-    clusterName: ${var.cluster_name}
-    region: ${var.region}
-    vpcId: ${module.vpc.vpc_id}
-    serviceAccount:
-      create: true
-      name: aws-load-balancer-controller
-      annotations:
-        eks.amazonaws.com/role-arn: ${module.iam.alb_controller_role_arn}
-  EOT
-  ]
-
-  wait       = true
-  timeout    = 300
-  depends_on = [module.eks, module.iam]
-}
-
 resource "aws_eks_addon" "external_dns" {
   cluster_name                = var.cluster_name
   addon_name                  = "external-dns"
@@ -97,5 +73,5 @@ resource "helm_release" "argocd" {
 
   wait       = true
   timeout    = 600
-  depends_on = [module.eks, helm_release.alb_controller, aws_eks_addon.external_dns]
+  depends_on = [module.eks, aws_eks_addon.external_dns]
 }
