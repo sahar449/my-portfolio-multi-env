@@ -81,12 +81,12 @@ resource "helm_release" "alb_controller" {
 }
 
 resource "aws_eks_addon" "external_dns" {
-  cluster_name             = var.cluster_name
-  addon_name               = "external-dns"
-  service_account_role_arn = module.iam.external_dns_role_arn
+  cluster_name                = var.cluster_name
+  addon_name                  = "external-dns"
+  service_account_role_arn    = module.iam.external_dns_role_arn
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
-  depends_on               = [module.eks, module.iam]
+  depends_on                  = [module.eks, module.iam]
 }
 
 resource "helm_release" "argocd" {
