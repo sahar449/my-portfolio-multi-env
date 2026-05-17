@@ -7,27 +7,33 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
-  release:
-    name: Release Please
+  tag:
+    name: Tag Version
     runs-on: ubuntu-latest
     steps:
-      - uses: googleapis/release-please-action@v4
-        id: release
+      - uses: actions/checkout@v4
+
+      - uses: mathieudutour/github-tag-action@v6.2
+        id: tag
         with:
-          release-type: python
-          token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          default_bump: patch
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.new_tag }}
+          name: ${{ steps.tag.outputs.new_tag }}
+          body: ${{ steps.tag.outputs.changelog }}
 
       - name: Tag released images in ECR
-        if: ${{ steps.release.outputs.release_created }}
         env:
           AWS_REGION: us-west-2
-          VERSION: ${{ steps.release.outputs.version }}
+          VERSION: ${{ steps.tag.outputs.new_version }}
           ECR: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.us-west-2.amazonaws.com
         run: |
-          echo "Released version ${VERSION} — tagging prod images"
           for service in frontend backend; do
             MANIFEST=$(aws ecr batch-get-image \
               --repository-name "${service}-prod" \
@@ -40,6 +46,5 @@ jobs:
                 --image-tag "v${VERSION}" \
                 --image-manifest "${MANIFEST}" \
                 --region "${AWS_REGION}" || true
-              echo "Tagged ${service}-prod:v${VERSION}"
             fi
           done
