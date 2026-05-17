@@ -133,18 +133,14 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
           ECR: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
         run: |
-          wget -qO /usr/local/bin/yq \
-            https://github.com/mikefarah/yq/releases/download/v4.44.1/yq_linux_amd64
-          chmod +x /usr/local/bin/yq
-
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
           git pull --rebase
 
-          yq e ".app.image.repository = \"${ECR}/frontend-staging\"" -i ArgoCD/frontend/helm_chart/values.staging.yaml
-          yq e ".app.image.tag = \"${IMAGE_TAG}\"" -i ArgoCD/frontend/helm_chart/values.staging.yaml
-          yq e ".app.image.repository = \"${ECR}/backend-staging\"" -i ArgoCD/backend/helm_chart/values.staging.yaml
-          yq e ".app.image.tag = \"${IMAGE_TAG}\"" -i ArgoCD/backend/helm_chart/values.staging.yaml
+          sed -i "s|repository:.*|repository: \"${ECR}/frontend-staging\"|" ArgoCD/frontend/helm_chart/values.staging.yaml
+          sed -i "s|tag:.*|tag: \"${IMAGE_TAG}\"|" ArgoCD/frontend/helm_chart/values.staging.yaml
+          sed -i "s|repository:.*|repository: \"${ECR}/backend-staging\"|" ArgoCD/backend/helm_chart/values.staging.yaml
+          sed -i "s|tag:.*|tag: \"${IMAGE_TAG}\"|" ArgoCD/backend/helm_chart/values.staging.yaml
 
           git add ArgoCD/frontend/helm_chart/values.staging.yaml ArgoCD/backend/helm_chart/values.staging.yaml
           git diff --staged --quiet || git commit -m "cd: deploy to staging image ${IMAGE_TAG}"
@@ -253,18 +249,14 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
           ECR: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
         run: |
-          wget -qO /usr/local/bin/yq \
-            https://github.com/mikefarah/yq/releases/download/v4.44.1/yq_linux_amd64
-          chmod +x /usr/local/bin/yq
-
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
           git pull --rebase
 
-          yq e ".app.image.repository = \"${ECR}/frontend-prod\"" -i ArgoCD/frontend/helm_chart/values.prod.yaml
-          yq e ".app.image.tag = \"${IMAGE_TAG}\"" -i ArgoCD/frontend/helm_chart/values.prod.yaml
-          yq e ".app.image.repository = \"${ECR}/backend-prod\"" -i ArgoCD/backend/helm_chart/values.prod.yaml
-          yq e ".app.image.tag = \"${IMAGE_TAG}\"" -i ArgoCD/backend/helm_chart/values.prod.yaml
+          sed -i "s|repository:.*|repository: \"${ECR}/frontend-prod\"|" ArgoCD/frontend/helm_chart/values.prod.yaml
+          sed -i "s|tag:.*|tag: \"${IMAGE_TAG}\"|" ArgoCD/frontend/helm_chart/values.prod.yaml
+          sed -i "s|repository:.*|repository: \"${ECR}/backend-prod\"|" ArgoCD/backend/helm_chart/values.prod.yaml
+          sed -i "s|tag:.*|tag: \"${IMAGE_TAG}\"|" ArgoCD/backend/helm_chart/values.prod.yaml
 
           git add ArgoCD/frontend/helm_chart/values.prod.yaml ArgoCD/backend/helm_chart/values.prod.yaml
           git diff --staged --quiet || git commit -m "cd: deploy to production image ${IMAGE_TAG}"
