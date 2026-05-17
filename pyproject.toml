@@ -1,0 +1,5 @@
+[project]
+name = "my-portfolio"
+version = "0.1.0"
+description = "Multi-environment portfolio app (frontend + backend)"
+requires-python = ">=3.11"
