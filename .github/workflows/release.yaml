@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    name: Release Please
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          release-type: simple
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag released images in ECR
+        if: ${{ steps.release.outputs.release_created }}
+        env:
+          AWS_REGION: us-west-2
+          VERSION: ${{ steps.release.outputs.version }}
+          ECR: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.us-west-2.amazonaws.com
+        run: |
+          echo "Released version ${VERSION} — tagging prod images"
+          for service in frontend backend; do
+            MANIFEST=$(aws ecr batch-get-image \
+              --repository-name "${service}-prod" \
+              --image-ids imageTag=latest \
+              --region "${AWS_REGION}" \
+              --query "images[0].imageManifest" --output text 2>/dev/null || true)
+            if [ -n "${MANIFEST}" ] && [ "${MANIFEST}" != "None" ]; then
+              aws ecr put-image \
+                --repository-name "${service}-prod" \
+                --image-tag "v${VERSION}" \
+                --image-manifest "${MANIFEST}" \
+                --region "${AWS_REGION}" || true
+              echo "Tagged ${service}-prod:v${VERSION}"
+            fi
+          done
