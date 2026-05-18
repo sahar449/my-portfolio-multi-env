@@ -1,5 +1,7 @@
 ### staging environment — full stack ###
 
+data "aws_caller_identity" "current" {}
+
 module "ecr_frontend" {
   source    = "../../modules/ecr"
   repo_name = "frontend-staging"
@@ -67,4 +69,19 @@ resource "aws_eks_addon" "external_dns" {
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
   depends_on                  = [module.eks, module.iam]
+}
+
+resource "aws_eks_access_entry" "admin" {
+  cluster_name  = var.cluster_name
+  principal_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:user/${var.aws_admin_user}"
+  depends_on    = [module.eks]
+}
+
+resource "aws_eks_access_policy_association" "admin" {
+  cluster_name  = var.cluster_name
+  principal_arn = aws_eks_access_entry.admin.principal_arn
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  access_scope {
+    type = "cluster"
+  }
 }
