@@ -169,24 +169,9 @@ jobs:
       - name: Terraform Apply
         working-directory: infra/envs/${{ inputs.environment }}
         run: terraform apply -auto-approve
+        env:
+          TF_VAR_aws_admin_user: ${{ secrets.AWS_USER }}
 
-      - name: Grant admin user cluster access
-        run: |
-          ENV="${{ inputs.environment }}"
-          CLUSTER_NAME="eksdemo-${ENV}-cluster"
-          PRINCIPAL="arn:aws:iam::${{ secrets.AWS_ACCOUNT_NUMBER }}:user/${{ secrets.AWS_USER }}"
-
-          aws eks create-access-entry \
-            --cluster-name "${CLUSTER_NAME}" \
-            --principal-arn "${PRINCIPAL}" \
-            --region ${{ env.AWS_REGION }} || true
-
-          aws eks associate-access-policy \
-            --cluster-name "${CLUSTER_NAME}" \
-            --principal-arn "${PRINCIPAL}" \
-            --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy \
-            --access-scope type=cluster \
-            --region ${{ env.AWS_REGION }} || true
 
   destroy:
     name: Terraform Destroy
