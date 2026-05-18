@@ -231,3 +231,21 @@ resource "aws_eks_addon" "external_dns" {
   service_account_role_arn = aws_iam_role.external_dns_role.arn
   depends_on               = [aws_eks_node_group.backend_nodes, aws_eks_node_group.frontend_nodes]
 }
+
+data "aws_caller_identity" "current" {}
+
+resource "aws_eks_access_entry" "admin" {
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:user/${var.admin_user}"
+  type          = "STANDARD"
+  depends_on    = [aws_eks_cluster.this]
+}
+
+resource "aws_eks_access_policy_association" "admin" {
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = aws_eks_access_entry.admin.principal_arn
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  access_scope {
+    type = "cluster"
+  }
+}
