@@ -166,6 +166,13 @@ jobs:
         working-directory: infra/envs/${{ inputs.environment }}
         run: terraform init -upgrade
 
+      - name: Import existing resources into state
+        working-directory: infra/envs/${{ inputs.environment }}
+        run: |
+          ENV="${{ inputs.environment }}"
+          CLUSTER="eksdemo-${ENV}-cluster"
+          terraform import aws_eks_addon.external_dns "${CLUSTER}:external-dns" || true
+
       - name: Terraform Apply
         working-directory: infra/envs/${{ inputs.environment }}
         run: terraform apply -auto-approve
