@@ -214,16 +214,10 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: github-actions-pre-delete-staging
-      - name: Get VPC name
-        working-directory: infra/envs/staging
-        run: |
-          terraform init -upgrade
-          VPC_NAME=$(terraform output -raw vpc_name 2>/dev/null || echo "")
-          echo "VPC_NAME=${VPC_NAME}" >> "$GITHUB_ENV"
       - name: Cleanup VPC resources
         run: |
           VPC_ID=$(aws ec2 describe-vpcs \
-            --filters "Name=tag:Name,Values=${VPC_NAME}" \
+            --filters "Name=tag:Name,Values=eksdemo-staging-vpc" \
             --query "Vpcs[0].VpcId" --output text 2>/dev/null || echo "")
           if [ -z "${VPC_ID}" ] || [ "${VPC_ID}" = "None" ]; then exit 0; fi
 
@@ -263,16 +257,10 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: github-actions-pre-delete-prod
-      - name: Get VPC name
-        working-directory: infra/envs/production
-        run: |
-          terraform init -upgrade
-          VPC_NAME=$(terraform output -raw vpc_name 2>/dev/null || echo "")
-          echo "VPC_NAME=${VPC_NAME}" >> "$GITHUB_ENV"
       - name: Cleanup VPC resources
         run: |
           VPC_ID=$(aws ec2 describe-vpcs \
-            --filters "Name=tag:Name,Values=${VPC_NAME}" \
+            --filters "Name=tag:Name,Values=eksdemo-prod-vpc" \
             --query "Vpcs[0].VpcId" --output text 2>/dev/null || echo "")
           if [ -z "${VPC_ID}" ] || [ "${VPC_ID}" = "None" ]; then exit 0; fi
 
@@ -363,16 +351,10 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: github-actions-destroy-dev
-      - name: Get VPC name
-        working-directory: infra/envs/dev
-        run: |
-          terraform init -upgrade
-          VPC_NAME=$(terraform output -raw vpc_name 2>/dev/null || echo "")
-          echo "VPC_NAME=${VPC_NAME}" >> "$GITHUB_ENV"
       - name: Cleanup VPC resources
         run: |
           VPC_ID=$(aws ec2 describe-vpcs \
-            --filters "Name=tag:Name,Values=${VPC_NAME}" \
+            --filters "Name=tag:Name,Values=eksdemo-dev-vpc" \
             --query "Vpcs[0].VpcId" --output text 2>/dev/null || echo "")
           if [ -z "${VPC_ID}" ] || [ "${VPC_ID}" = "None" ]; then
             echo "No VPC found, skipping cleanup"
