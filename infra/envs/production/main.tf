@@ -56,6 +56,11 @@ module "monitoring" {
 # Cluster components — installed once via Terraform, not per-deploy
 # ─────────────────────────────────────────────────────────────────
 
+import {
+  to = aws_eks_addon.external_dns
+  id = "eksdemo-prod-cluster:external-dns"
+}
+
 resource "aws_eks_addon" "external_dns" {
   cluster_name                = var.cluster_name
   addon_name                  = "external-dns"
