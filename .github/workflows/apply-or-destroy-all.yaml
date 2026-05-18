@@ -86,6 +86,12 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: github-actions-apply-dev
+      - name: Clear stale DynamoDB state checksum
+        run: |
+          aws dynamodb delete-item \
+            --table-name ${{ env.TF_LOCK_TABLE }} \
+            --key '{"LockID":{"S":"${{ env.TF_STATE_BUCKET }}/eksdemo/dev/terraform.tfstate-md5"}}' \
+            --region ${{ env.AWS_REGION }} || true
       - name: Terraform Init
         working-directory: infra/envs/dev
         run: terraform init -upgrade
@@ -109,6 +115,12 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: github-actions-apply-staging
+      - name: Clear stale DynamoDB state checksum
+        run: |
+          aws dynamodb delete-item \
+            --table-name ${{ env.TF_LOCK_TABLE }} \
+            --key '{"LockID":{"S":"${{ env.TF_STATE_BUCKET }}/eksdemo/staging/terraform.tfstate-md5"}}' \
+            --region ${{ env.AWS_REGION }} || true
       - name: Terraform Init
         working-directory: infra/envs/staging
         run: terraform init -upgrade
@@ -144,6 +156,12 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: github-actions-apply-prod
+      - name: Clear stale DynamoDB state checksum
+        run: |
+          aws dynamodb delete-item \
+            --table-name ${{ env.TF_LOCK_TABLE }} \
+            --key '{"LockID":{"S":"${{ env.TF_STATE_BUCKET }}/eksdemo/prod/terraform.tfstate-md5"}}' \
+            --region ${{ env.AWS_REGION }} || true
       - name: Terraform Init
         working-directory: infra/envs/production
         run: terraform init -upgrade
@@ -300,6 +318,12 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: github-actions-destroy-staging
+      - name: Clear stale DynamoDB state checksum
+        run: |
+          aws dynamodb delete-item \
+            --table-name ${{ env.TF_LOCK_TABLE }} \
+            --key '{"LockID":{"S":"${{ env.TF_STATE_BUCKET }}/eksdemo/staging/terraform.tfstate-md5"}}' \
+            --region ${{ env.AWS_REGION }} || true
       - name: Terraform Init
         working-directory: infra/envs/staging
         run: terraform init -upgrade
@@ -326,6 +350,12 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: github-actions-destroy-prod
+      - name: Clear stale DynamoDB state checksum
+        run: |
+          aws dynamodb delete-item \
+            --table-name ${{ env.TF_LOCK_TABLE }} \
+            --key '{"LockID":{"S":"${{ env.TF_STATE_BUCKET }}/eksdemo/prod/terraform.tfstate-md5"}}' \
+            --region ${{ env.AWS_REGION }} || true
       - name: Terraform Init
         working-directory: infra/envs/production
         run: terraform init -upgrade
@@ -378,6 +408,12 @@ jobs:
               --query "NetworkInterfaces[?Status=='available'].NetworkInterfaceId" --output text || true)
             for eni in ${ENIS}; do aws ec2 delete-network-interface --network-interface-id "$eni" || true; done
           fi
+      - name: Clear stale DynamoDB state checksum
+        run: |
+          aws dynamodb delete-item \
+            --table-name ${{ env.TF_LOCK_TABLE }} \
+            --key '{"LockID":{"S":"${{ env.TF_STATE_BUCKET }}/eksdemo/dev/terraform.tfstate-md5"}}' \
+            --region ${{ env.AWS_REGION }} || true
       - name: Terraform Init
         working-directory: infra/envs/dev
         run: terraform init -upgrade
