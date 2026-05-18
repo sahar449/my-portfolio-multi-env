@@ -1,7 +1,5 @@
 ### staging environment — full stack ###
 
-data "aws_caller_identity" "current" {}
-
 module "ecr_frontend" {
   source    = "../../modules/ecr"
   repo_name = "frontend-staging"
@@ -27,7 +25,6 @@ module "eks" {
   vpc_id             = module.vpc.vpc_id
   private_subnet_ids = module.vpc.private_subnet_ids
   public_subnet_ids  = module.vpc.public_subnet_ids
-  aws_admin_user     = var.aws_admin_user
 }
 
 module "iam" {

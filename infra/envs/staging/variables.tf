@@ -8,4 +8,3 @@ variable "region" {}
 variable "DB_NAME" {}
 variable "DB_USER" {}
 variable "secret_name" {}
-variable "aws_admin_user" {}

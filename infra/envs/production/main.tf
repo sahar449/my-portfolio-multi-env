@@ -1,7 +1,5 @@
 ### prod environment — full stack, separate from dev and staging ###
 
-data "aws_caller_identity" "current" {}
-
 module "vpc" {
   source               = "../../modules/vpc"
   vpc_cidr             = var.vpc_cidr
@@ -17,7 +15,6 @@ module "eks" {
   vpc_id             = module.vpc.vpc_id
   private_subnet_ids = module.vpc.private_subnet_ids
   public_subnet_ids  = module.vpc.public_subnet_ids
-  aws_admin_user     = var.aws_admin_user
 }
 
 module "iam" {

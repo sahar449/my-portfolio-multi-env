@@ -127,8 +127,22 @@ jobs:
       - name: Terraform Apply
         working-directory: infra/envs/staging
         run: terraform apply -auto-approve
-        env:
-          TF_VAR_aws_admin_user: ${{ secrets.AWS_USER }}
+      - name: Configure aws-auth
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name eksdemo-staging-cluster
+          kubectl apply -f - <<EOF
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: aws-auth
+            namespace: kube-system
+          data:
+            mapUsers: |
+              - userarn: arn:aws:iam::${{ secrets.AWS_ACCOUNT_NUMBER }}:user/${{ secrets.AWS_USER }}
+                username: ${{ secrets.AWS_USER }}
+                groups:
+                  - system:masters
+          EOF
 
   apply-prod:
     name: Apply Prod
@@ -170,6 +184,22 @@ jobs:
             -target=aws_eks_access_policy_association.admin
         env:
           TF_VAR_aws_admin_user: ${{ secrets.AWS_USER }}
+      - name: Configure aws-auth
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.MGMT_CLUSTER }}
+          kubectl apply -f - <<EOF
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: aws-auth
+            namespace: kube-system
+          data:
+            mapUsers: |
+              - userarn: arn:aws:iam::${{ secrets.AWS_ACCOUNT_NUMBER }}:user/${{ secrets.AWS_USER }}
+                username: ${{ secrets.AWS_USER }}
+                groups:
+                  - system:masters
+          EOF
       - name: Update kubeconfig
         run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.MGMT_CLUSTER }}
       - name: Terraform Apply (ArgoCD)

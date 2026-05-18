@@ -169,8 +169,24 @@ jobs:
       - name: Terraform Apply
         working-directory: infra/envs/${{ inputs.environment }}
         run: terraform apply -auto-approve
-        env:
-          TF_VAR_aws_admin_user: ${{ secrets.AWS_USER }}
+      - name: Configure aws-auth
+        if: ${{ inputs.environment != 'dev' }}
+        run: |
+          CLUSTER="eksdemo-${{ inputs.environment == 'production' && 'prod' || inputs.environment }}-cluster"
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name "$CLUSTER"
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: aws-auth
+            namespace: kube-system
+          data:
+            mapUsers: |
+              - userarn: arn:aws:iam::${{ secrets.AWS_ACCOUNT_NUMBER }}:user/${{ secrets.AWS_USER }}
+                username: ${{ secrets.AWS_USER }}
+                groups:
+                  - system:masters
+          EOF
 
 
   destroy:
