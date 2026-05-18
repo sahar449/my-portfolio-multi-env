@@ -169,8 +169,11 @@ jobs:
       - name: Import existing resources into state
         working-directory: infra/envs/${{ inputs.environment }}
         run: |
-          ENV="${{ inputs.environment }}"
-          CLUSTER="eksdemo-${ENV}-cluster"
+          case "${{ inputs.environment }}" in
+            staging)    CLUSTER="eksdemo-staging-cluster" ;;
+            production) CLUSTER="eksdemo-prod-cluster" ;;
+            dev)        CLUSTER="eksdemo-dev-cluster" ;;
+          esac
           terraform import aws_eks_addon.external_dns "${CLUSTER}:external-dns" || true
 
       - name: Terraform Apply
