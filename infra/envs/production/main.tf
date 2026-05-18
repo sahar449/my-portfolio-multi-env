@@ -32,6 +32,7 @@ module "rds" {
   vpc_id          = module.vpc.vpc_id
   private_subnets = module.vpc.private_subnet_ids
   cidr_blocks     = module.vpc.cidr_blocks
+  name_prefix     = var.name_prefix
 }
 
 module "ssl" {

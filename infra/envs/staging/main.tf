@@ -27,6 +27,13 @@ module "eks" {
   public_subnet_ids  = module.vpc.public_subnet_ids
 }
 
+module "iam" {
+  source            = "../../modules/iam"
+  oidc_provider_arn = module.eks.oidc_provider_arn
+  oidc_provider_url = module.eks.oidc_provider_url
+  depends_on        = [module.eks]
+}
+
 module "rds" {
   source          = "../../modules/rds"
   DB_NAME         = var.DB_NAME
