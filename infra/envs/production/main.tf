@@ -78,6 +78,6 @@ resource "helm_release" "argocd" {
 
   wait       = true
   timeout    = 600
-  depends_on = [module.eks, aws_eks_addon.external_dns, aws_eks_access_entry.admin]
+  depends_on = [module.eks, aws_eks_addon.external_dns]
 }
 
