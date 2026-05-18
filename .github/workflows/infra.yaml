@@ -206,15 +206,20 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: github-actions-infra-destroy-${{ inputs.environment }}
 
-      - name: Get VPC name
-        working-directory: infra/envs/${{ inputs.environment }}
+      - name: Clear stale DynamoDB state checksum
         run: |
-          terraform init -upgrade
-          VPC_NAME=$(terraform output -raw vpc_name 2>/dev/null || echo "")
-          echo "VPC_NAME=${VPC_NAME}" >> "$GITHUB_ENV"
+          aws dynamodb delete-item \
+            --table-name ${{ env.TF_LOCK_TABLE }} \
+            --key "{\"LockID\":{\"S\":\"${{ env.TF_STATE_BUCKET }}/eksdemo/${{ inputs.environment }}/terraform.tfstate-md5\"}}" \
+            --region ${{ env.AWS_REGION }} || true
+
+      - name: Terraform Init
+        working-directory: infra/envs/${{ inputs.environment }}
+        run: terraform init -upgrade
 
       - name: Cleanup VPC resources
         run: |
+          VPC_NAME="eksdemo-${{ inputs.environment }}-vpc"
           VPC_ID=$(aws ec2 describe-vpcs \
             --filters "Name=tag:Name,Values=${VPC_NAME}" \
             --query "Vpcs[0].VpcId" --output text 2>/dev/null || echo "")
@@ -244,6 +249,8 @@ jobs:
       - name: Terraform Destroy
         working-directory: infra/envs/${{ inputs.environment }}
         run: terraform destroy -auto-approve
+        env:
+          TF_VAR_aws_admin_user: ${{ secrets.AWS_USER }}
 
       - name: Cleanup state
         run: |
