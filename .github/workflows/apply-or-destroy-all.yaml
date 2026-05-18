@@ -169,21 +169,9 @@ jobs:
       - name: Terraform Init
         working-directory: infra/envs/production
         run: terraform init -upgrade
-      - name: Terraform Apply (infrastructure)
+      - name: Terraform Apply
         working-directory: infra/envs/production
-        run: |
-          terraform apply -auto-approve \
-            -target=module.vpc \
-            -target=module.eks \
-            -target=module.iam \
-            -target=module.rds \
-            -target=module.ssl \
-            -target=module.monitoring \
-            -target=aws_eks_addon.external_dns \
-            -target=aws_eks_access_entry.admin \
-            -target=aws_eks_access_policy_association.admin
-        env:
-          TF_VAR_aws_admin_user: ${{ secrets.AWS_USER }}
+        run: terraform apply -auto-approve
       - name: Configure aws-auth
         run: |
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.MGMT_CLUSTER }}
@@ -200,13 +188,16 @@ jobs:
                 groups:
                   - system:masters
           EOF
-      - name: Update kubeconfig
-        run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.MGMT_CLUSTER }}
-      - name: Terraform Apply (ArgoCD)
-        working-directory: infra/envs/production
-        run: terraform apply -auto-approve
-        env:
-          TF_VAR_aws_admin_user: ${{ secrets.AWS_USER }}
+      - name: Install ArgoCD
+        run: |
+          helm repo add argo https://argoproj.github.io/argo-helm || true
+          helm repo update
+          helm upgrade --install argocd argo/argo-cd \
+            --version 7.8.23 \
+            --namespace argocd \
+            --create-namespace \
+            --values ArgoCD/argocd-server-values.yaml \
+            --wait --timeout 10m
 
   # ─────────────────────────────────────────────────────────────────
   # DESTROY PATH

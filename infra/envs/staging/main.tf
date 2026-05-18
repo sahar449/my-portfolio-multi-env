@@ -60,12 +60,4 @@ module "monitoring" {
   depends_on        = [module.eks]
 }
 
-resource "aws_eks_addon" "external_dns" {
-  cluster_name                = var.cluster_name
-  addon_name                  = "external-dns"
-  service_account_role_arn    = module.iam.external_dns_role_arn
-  resolve_conflicts_on_create = "OVERWRITE"
-  resolve_conflicts_on_update = "OVERWRITE"
-  depends_on                  = [module.eks, module.iam]
-}
 
