@@ -11,3 +11,8 @@ variable "public_subnet_ids" {
 }
 
 variable "cluster_name" {}
+
+variable "aws_admin_user" {
+  description = "IAM username to grant cluster admin access"
+  type        = string
+}

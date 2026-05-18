@@ -17,6 +17,7 @@ module "eks" {
   vpc_id             = module.vpc.vpc_id
   private_subnet_ids = module.vpc.private_subnet_ids
   public_subnet_ids  = module.vpc.public_subnet_ids
+  aws_admin_user     = var.aws_admin_user
 }
 
 module "iam" {
@@ -56,11 +57,6 @@ module "monitoring" {
 # Cluster components — installed once via Terraform, not per-deploy
 # ─────────────────────────────────────────────────────────────────
 
-import {
-  to = aws_eks_addon.external_dns
-  id = "eksdemo-prod-cluster:external-dns"
-}
-
 resource "aws_eks_addon" "external_dns" {
   cluster_name                = var.cluster_name
   addon_name                  = "external-dns"
@@ -68,21 +64,6 @@ resource "aws_eks_addon" "external_dns" {
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
   depends_on                  = [module.eks, module.iam]
-}
-
-resource "aws_eks_access_entry" "admin" {
-  cluster_name  = var.cluster_name
-  principal_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:user/${var.aws_admin_user}"
-  depends_on    = [module.eks]
-}
-
-resource "aws_eks_access_policy_association" "admin" {
-  cluster_name  = var.cluster_name
-  principal_arn = aws_eks_access_entry.admin.principal_arn
-  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
-  access_scope {
-    type = "cluster"
-  }
 }
 
 resource "helm_release" "argocd" {
