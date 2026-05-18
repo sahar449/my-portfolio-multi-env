@@ -3,7 +3,7 @@
 ###################################
 
 resource "aws_iam_policy" "lb_controller_policy" {
-  name        = "eks-lb-controller-custom-policy"
+  name        = "${var.name_prefix}-lb-controller-policy"
   description = "IAM policy for AWS Load Balancer Controller on EKS"
 
   policy = jsonencode({
@@ -270,7 +270,7 @@ resource "aws_iam_policy" "lb_controller_policy" {
 }
 
 resource "aws_iam_role" "lb_controller_role" {
-  name = "eks-lb-controller-role"
+  name = "${var.name_prefix}-lb-controller-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -302,7 +302,7 @@ resource "aws_iam_role_policy_attachment" "lb_controller_attach" {
 ###################################
 
 resource "aws_iam_policy" "external_dns_policy" {
-  name        = "ExternalDNSIAMPolicy"
+  name        = "${var.name_prefix}-external-dns-policy"
   description = "IAM policy for External DNS to manage Route53 records"
 
   policy = jsonencode({
@@ -326,7 +326,7 @@ resource "aws_iam_policy" "external_dns_policy" {
 }
 
 resource "aws_iam_role" "external_dns_role" {
-  name = "eks-external-dns-role"
+  name = "${var.name_prefix}-external-dns-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -357,7 +357,7 @@ resource "aws_iam_role_policy_attachment" "external_dns_attach_custom" {
 ###################################
 
 resource "aws_iam_policy" "flask_app_secrets_policy" {
-  name = "flask-app-secrets-policy"
+  name = "${var.name_prefix}-flask-app-secrets-policy"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -403,7 +403,7 @@ data "aws_iam_policy_document" "flask_app_assume_role" {
 }
 
 resource "aws_iam_role" "flask_app_role" {
-  name               = "flask-app-secrets-role"
+  name               = "${var.name_prefix}-flask-app-secrets-role"
   assume_role_policy = data.aws_iam_policy_document.flask_app_assume_role.json
 }
 

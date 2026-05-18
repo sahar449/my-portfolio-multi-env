@@ -11,12 +11,12 @@ spec:
             cluster: eksdemo-staging-cluster
             clusterName: eksdemo-staging-cluster
             vpcId: "vpc-07712d7b0ffbf9c54"
-            irsaRoleArn: "arn:aws:iam::634647866665:role/eksdemo-staging-cluster-lb-controller-role"
+            irsaRoleArn: "arn:aws:iam::634647866665:role/eksdemo-staging-lb-controller-role"
           - env: prod
             cluster: in-cluster
             clusterName: eksdemo-prod-cluster
             vpcId: "vpc-0c9b6471e9ff22617"
-            irsaRoleArn: "arn:aws:iam::634647866665:role/eks-lb-controller-role"
+            irsaRoleArn: "arn:aws:iam::634647866665:role/eksdemo-prod-lb-controller-role"
   template:
     metadata:
       name: "alb-controller-{{env}}"

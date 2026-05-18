@@ -21,6 +21,7 @@ module "iam" {
   source            = "../../modules/iam"
   oidc_provider_arn = module.eks.oidc_provider_arn
   oidc_provider_url = module.eks.oidc_provider_url
+  name_prefix       = var.name_prefix
   depends_on        = [module.eks]
 }
 
