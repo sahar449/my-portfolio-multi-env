@@ -378,6 +378,9 @@ jobs:
               --query "NetworkInterfaces[?Status=='available'].NetworkInterfaceId" --output text || true)
             for eni in ${ENIS}; do aws ec2 delete-network-interface --network-interface-id "$eni" || true; done
           fi
+      - name: Terraform Init
+        working-directory: infra/envs/dev
+        run: terraform init -upgrade
       - name: Terraform Destroy
         working-directory: infra/envs/dev
         run: terraform destroy -auto-approve
