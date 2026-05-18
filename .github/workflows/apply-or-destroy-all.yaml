@@ -131,7 +131,7 @@ jobs:
       - name: Configure aws-auth
         run: |
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name eksdemo-staging-cluster
-          kubectl apply -f - <<EOF
+          kubectl apply --validate=false -f - <<EOF
           apiVersion: v1
           kind: ConfigMap
           metadata:
@@ -178,7 +178,7 @@ jobs:
       - name: Configure aws-auth
         run: |
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name eksdemo-prod-cluster
-          kubectl apply -f - <<EOF
+          kubectl apply --validate=false -f - <<EOF
           apiVersion: v1
           kind: ConfigMap
           metadata:
@@ -193,6 +193,7 @@ jobs:
           EOF
       - name: Install ArgoCD
         run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name eksdemo-prod-cluster
           helm repo add argo https://argoproj.github.io/argo-helm || true
           helm repo update
           helm upgrade --install argocd argo/argo-cd \
