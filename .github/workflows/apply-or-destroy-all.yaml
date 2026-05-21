@@ -126,12 +126,11 @@ jobs:
       - name: Terraform Apply
         working-directory: infra/envs/staging
         run: terraform apply -auto-approve
-        env:
-          TF_VAR_admin_user: ${{ secrets.AWS_USER }}
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name eksdemo-staging-cluster
       - name: Configure aws-auth
         run: |
-          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name eksdemo-staging-cluster
-          kubectl apply --validate=false -f - <<EOF
+          cat <<EOF | kubectl apply -f -
           apiVersion: v1
           kind: ConfigMap
           metadata:
@@ -173,12 +172,11 @@ jobs:
       - name: Terraform Apply
         working-directory: infra/envs/production
         run: terraform apply -auto-approve
-        env:
-          TF_VAR_admin_user: ${{ secrets.AWS_USER }}
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name eksdemo-prod-cluster
       - name: Configure aws-auth
         run: |
-          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name eksdemo-prod-cluster
-          kubectl apply --validate=false -f - <<EOF
+          cat <<EOF | kubectl apply -f -
           apiVersion: v1
           kind: ConfigMap
           metadata:
@@ -193,7 +191,6 @@ jobs:
           EOF
       - name: Install ArgoCD
         run: |
-          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name eksdemo-prod-cluster
           helm repo add argo https://argoproj.github.io/argo-helm || true
           helm repo update
           helm upgrade --install argocd argo/argo-cd \
@@ -345,8 +342,6 @@ jobs:
       - name: Terraform Destroy
         working-directory: infra/envs/staging
         run: terraform destroy -auto-approve
-        env:
-          TF_VAR_admin_user: ${{ secrets.AWS_USER }}
       - name: Cleanup state
         run: aws s3 rm s3://${{ env.TF_STATE_BUCKET }}/eksdemo/staging/ --recursive || true
 
@@ -379,8 +374,6 @@ jobs:
       - name: Terraform Destroy
         working-directory: infra/envs/production
         run: terraform destroy -auto-approve
-        env:
-          TF_VAR_admin_user: ${{ secrets.AWS_USER }}
       - name: Cleanup state
         run: aws s3 rm s3://${{ env.TF_STATE_BUCKET }}/eksdemo/prod/ --recursive || true
 

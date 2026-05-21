@@ -12,7 +12,3 @@ variable "public_subnet_ids" {
 
 variable "cluster_name" {}
 
-variable "admin_user" {
-  description = "IAM username to grant cluster admin access"
-}
-
