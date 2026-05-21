@@ -189,43 +189,20 @@ jobs:
                 groups:
                   - system:masters
           EOF
-      - name: Install ArgoCD
-        run: |
-          helm repo add argo https://argoproj.github.io/argo-helm || true
-          helm repo update
-          helm upgrade --install argocd argo/argo-cd \
-            --version 7.8.23 \
-            --namespace argocd \
-            --create-namespace \
-            --values ArgoCD/argocd-server-values.yaml \
-            --wait --timeout 10m
-      - name: Register staging cluster in ArgoCD
-        run: |
-          # Install ArgoCD CLI
-          curl -sSL -o /usr/local/bin/argocd \
-            https://github.com/argoproj/argo-cd/releases/download/v2.14.4/argocd-linux-amd64
-          chmod +x /usr/local/bin/argocd
-
-          # Add staging cluster to kubeconfig
-          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} \
-            --name eksdemo-staging-cluster --alias eksdemo-staging-cluster
-
-          # Port-forward ArgoCD server and wait
-          kubectl port-forward svc/argocd-server -n argocd 8080:443 &
-          sleep 8
-
-          # Login to ArgoCD
-          ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret \
-            -o jsonpath='{.data.password}' | base64 --decode)
-          argocd login localhost:8080 \
-            --username admin \
-            --password "$ARGOCD_PASSWORD" \
-            --insecure
-
-          # Register staging cluster
-          argocd cluster add eksdemo-staging-cluster \
-            --name eksdemo-staging-cluster \
-            --yes
+      # ArgoCD install and staging cluster registration are handled in deploy.yaml
+      # - name: Install ArgoCD
+      #   run: |
+      #     helm repo add argo https://argoproj.github.io/argo-helm || true
+      #     helm repo update
+      #     helm upgrade --install argocd argo/argo-cd \
+      #       --version 7.8.23 \
+      #       --namespace argocd \
+      #       --create-namespace \
+      #       --values ArgoCD/argocd-server-values.yaml \
+      #       --wait --timeout 10m
+      # - name: Register staging cluster in ArgoCD
+      #   run: |
+      #     ...see deploy.yaml for the LoadBalancer-based approach
 
   # ─────────────────────────────────────────────────────────────────
   # DESTROY PATH
