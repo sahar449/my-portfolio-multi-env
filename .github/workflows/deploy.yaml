@@ -118,10 +118,11 @@ jobs:
 
           kubectl config use-context "$PROD_CONTEXT"
 
-      - name: Update image tag in Git
+      - name: Update values in Git
         env:
           IMAGE_TAG: ${{ github.sha }}
           ECR: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+          ACCOUNT: ${{ secrets.AWS_ACCOUNT_NUMBER }}
         run: |
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
@@ -132,7 +133,20 @@ jobs:
           sed -i "s|repository:.*|repository: \"${ECR}/backend-staging\"|" ArgoCD/backend/helm_chart/values.staging.yaml
           sed -i "s|tag:.*|tag: \"${IMAGE_TAG}\"|" ArgoCD/backend/helm_chart/values.staging.yaml
 
-          git add ArgoCD/frontend/helm_chart/values.staging.yaml ArgoCD/backend/helm_chart/values.staging.yaml
+          STAGING_VPC=$(aws eks describe-cluster --name eksdemo-staging-cluster \
+            --query 'cluster.resourcesVpcConfig.vpcId' --output text --region ${{ env.AWS_REGION }})
+          sed -i "s|vpcId: \"[^\"]*\"|vpcId: \"${STAGING_VPC}\"|" ArgoCD/apps/alb-controller-staging.yaml
+          sed -i "s|arn:aws:iam::[^:]*:role/|arn:aws:iam::${ACCOUNT}:role/|g" ArgoCD/apps/alb-controller-staging.yaml
+
+          PROD_VPC=$(aws eks describe-cluster --name eksdemo-prod-cluster \
+            --query 'cluster.resourcesVpcConfig.vpcId' --output text --region ${{ env.AWS_REGION }})
+          sed -i "s|vpcId: \"[^\"]*\"|vpcId: \"${PROD_VPC}\"|" ArgoCD/apps/alb-controller-prod.yaml
+          sed -i "s|arn:aws:iam::[^:]*:role/|arn:aws:iam::${ACCOUNT}:role/|g" ArgoCD/apps/alb-controller-prod.yaml
+
+          git add ArgoCD/frontend/helm_chart/values.staging.yaml \
+                  ArgoCD/backend/helm_chart/values.staging.yaml \
+                  ArgoCD/apps/alb-controller-staging.yaml \
+                  ArgoCD/apps/alb-controller-prod.yaml
           git diff --staged --quiet || git commit -m "cd: deploy to staging image ${IMAGE_TAG}"
           git push
 
@@ -234,10 +248,11 @@ jobs:
       - name: Connect to prod cluster
         run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name eksdemo-prod-cluster
 
-      - name: Update image tag in Git
+      - name: Update values in Git
         env:
           IMAGE_TAG: ${{ github.sha }}
           ECR: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+          ACCOUNT: ${{ secrets.AWS_ACCOUNT_NUMBER }}
         run: |
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
@@ -248,7 +263,20 @@ jobs:
           sed -i "s|repository:.*|repository: \"${ECR}/backend-prod\"|" ArgoCD/backend/helm_chart/values.prod.yaml
           sed -i "s|tag:.*|tag: \"${IMAGE_TAG}\"|" ArgoCD/backend/helm_chart/values.prod.yaml
 
-          git add ArgoCD/frontend/helm_chart/values.prod.yaml ArgoCD/backend/helm_chart/values.prod.yaml
+          STAGING_VPC=$(aws eks describe-cluster --name eksdemo-staging-cluster \
+            --query 'cluster.resourcesVpcConfig.vpcId' --output text --region ${{ env.AWS_REGION }})
+          sed -i "s|vpcId: \"[^\"]*\"|vpcId: \"${STAGING_VPC}\"|" ArgoCD/apps/alb-controller-staging.yaml
+          sed -i "s|arn:aws:iam::[^:]*:role/|arn:aws:iam::${ACCOUNT}:role/|g" ArgoCD/apps/alb-controller-staging.yaml
+
+          PROD_VPC=$(aws eks describe-cluster --name eksdemo-prod-cluster \
+            --query 'cluster.resourcesVpcConfig.vpcId' --output text --region ${{ env.AWS_REGION }})
+          sed -i "s|vpcId: \"[^\"]*\"|vpcId: \"${PROD_VPC}\"|" ArgoCD/apps/alb-controller-prod.yaml
+          sed -i "s|arn:aws:iam::[^:]*:role/|arn:aws:iam::${ACCOUNT}:role/|g" ArgoCD/apps/alb-controller-prod.yaml
+
+          git add ArgoCD/frontend/helm_chart/values.prod.yaml \
+                  ArgoCD/backend/helm_chart/values.prod.yaml \
+                  ArgoCD/apps/alb-controller-staging.yaml \
+                  ArgoCD/apps/alb-controller-prod.yaml
           git diff --staged --quiet || git commit -m "cd: deploy to production image ${IMAGE_TAG}"
           git push
 
