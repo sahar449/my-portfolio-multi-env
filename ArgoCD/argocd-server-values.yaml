@@ -21,8 +21,5 @@ server:
       alb.ingress.kubernetes.io/load-balancer-attributes: deletion_protection.enabled=false
       alb.ingress.kubernetes.io/target-group-attributes: deregistration_delay.timeout_seconds=10
       external-dns.alpha.kubernetes.io/hostname: argocd.saharbittman.com
-    hosts:
-      - argocd.saharbittman.com
-    tls:
-      - hosts:
-          - '*.saharbittman.com'
+    hostname: argocd.saharbittman.com
+    tls: true
