@@ -1,0 +1,43 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: staging
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  description: Staging environment
+  sourceRepos:
+    - https://github.com/sahar449/my-portfolio-multi-env.git
+    - https://aws.github.io/eks-charts
+  destinations:
+    - namespace: '*'
+      name: eksdemo-staging-cluster
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: prod
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  description: Production environment
+  sourceRepos:
+    - https://github.com/sahar449/my-portfolio-multi-env.git
+    - https://aws.github.io/eks-charts
+  destinations:
+    - namespace: '*'
+      name: in-cluster
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'

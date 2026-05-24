@@ -18,7 +18,7 @@ spec:
       annotations:
         argocd.argoproj.io/sync-wave: '{{wave}}'
     spec:
-      project: default
+      project: staging
       source:
         repoURL: https://github.com/sahar449/my-portfolio-multi-env.git
         targetRevision: HEAD
