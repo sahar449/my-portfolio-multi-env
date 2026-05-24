@@ -3,7 +3,7 @@ app:
   namespace: default
   replicas: 2
   image:
-    repository: "634647866665.dkr.ecr.us-west-2.amazonaws.com/backend-prod"
+    repository: "ACCOUNT_ID.dkr.ecr.us-west-2.amazonaws.com/backend-prod"
     tag: latest
     pullPolicy: Always
   securityContext:
@@ -33,7 +33,8 @@ secrets:
   providerClassName: rds-secret-provider
   mountPath: /mnt/rds-secret
   k8sSecretName: rds-credentials
-  accountNumber: "634647866665"
+  rdsSecretName: rds-creds-prod
+  irsaRoleArn: "arn:aws:iam::ACCOUNT_ID:role/eksdemo-prod-flask-app-secrets-role"
 resources:
   requests:
     memory: 64Mi

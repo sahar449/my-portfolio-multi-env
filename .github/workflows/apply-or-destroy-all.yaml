@@ -224,6 +224,10 @@ jobs:
         run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name eksdemo-prod-cluster || true
       - name: Delete ArgoCD applications
         run: |
+          # Remove finalizers first so ArgoCD doesn't wait for cascade resource cleanup
+          kubectl get applications -n argocd -o name 2>/dev/null | \
+            xargs -r -I {} kubectl patch {} -n argocd \
+              --type merge -p '{"metadata":{"finalizers":null}}' || true
           kubectl delete applications --all -n argocd --ignore-not-found || true
           kubectl delete appprojects --all -n argocd --ignore-not-found || true
 

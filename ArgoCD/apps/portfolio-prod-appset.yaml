@@ -1,27 +1,19 @@
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: portfolio
+  name: portfolio-prod
   namespace: argocd
 spec:
   generators:
-    - matrix:
-        generators:
-          - list:
-              elements:
-                - env: staging
-                  cluster: eksdemo-staging-cluster
-                - env: prod
-                  cluster: in-cluster
-          - list:
-              elements:
-                - service: frontend
-                  wave: "2"
-                - service: backend
-                  wave: "3"
+    - list:
+        elements:
+          - service: frontend
+            wave: "2"
+          - service: backend
+            wave: "3"
   template:
     metadata:
-      name: '{{service}}-{{env}}'
+      name: '{{service}}-prod'
       namespace: argocd
       annotations:
         argocd.argoproj.io/sync-wave: '{{wave}}'
@@ -33,9 +25,9 @@ spec:
         path: 'ArgoCD/{{service}}/helm_chart'
         helm:
           valueFiles:
-            - values.{{env}}.yaml
+            - values.prod.yaml
       destination:
-        name: '{{cluster}}'
+        name: in-cluster
         namespace: default
       syncPolicy:
         automated:
