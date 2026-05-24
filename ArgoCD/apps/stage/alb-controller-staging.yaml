@@ -15,12 +15,12 @@ spec:
       values: |
         clusterName: "eksdemo-staging-cluster"
         region: us-west-2
-        vpcId: "STAGING_VPC_ID"
+        vpcId: "vpc-00b4183efd1756363"
         serviceAccount:
           create: true
           name: aws-load-balancer-controller
           annotations:
-            eks.amazonaws.com/role-arn: "arn:aws:iam::ACCOUNT_ID:role/eksdemo-staging-lb-controller-role"
+            eks.amazonaws.com/role-arn: "arn:aws:iam::634647866665:role/eksdemo-staging-lb-controller-role"
   destination:
     name: eksdemo-staging-cluster
     namespace: kube-system
