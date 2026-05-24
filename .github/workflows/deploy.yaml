@@ -1,24 +1,14 @@
 name: Deploy
 
 on:
-  push:
-    branches:
-      - staging
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [dev]
   workflow_dispatch:
-    inputs:
-      stage:
-        description: "Stage to run"
-        required: true
-        default: "all"
-        type: choice
-        options:
-          - all        # staging → QA → production
-          - staging    # deploy to staging only
-          - qa         # run QA & E2E tests only
-          - production # deploy to production only
 
 concurrency:
-  group: deploy-${{ github.ref }}
+  group: deploy-staging
   cancel-in-progress: false
 
 permissions:
@@ -29,17 +19,15 @@ env:
   AWS_REGION: us-west-2
 
 jobs:
-  # ─────────────────────────────────────────────────────────────────
-  # DEPLOY TO STAGING
-  # ─────────────────────────────────────────────────────────────────
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.stage == 'all' || inputs.stage == 'staging' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     environment: staging
     env:
       CLUSTER_NAME: eksdemo-staging-cluster
-      ALB_FILE: ArgoCD/apps/alb-controller-staging.yaml
+      ALB_FILE: ArgoCD/apps/stage/alb-controller-staging.yaml
+      IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -56,7 +44,6 @@ jobs:
       - name: Promote images dev → staging
         env:
           ECR: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
-          IMAGE_TAG: ${{ github.sha }}
         run: |
           for service in frontend backend; do
             docker pull  "${ECR}/${service}-dev:latest"
@@ -90,10 +77,8 @@ jobs:
         run: |
           PROD_CONTEXT=$(kubectl config current-context)
 
-          # Temporarily expose ArgoCD via LoadBalancer (no ALB controller needed)
           kubectl patch svc argocd-server -n argocd -p '{"spec":{"type":"LoadBalancer"}}'
 
-          # Wait for Classic ELB hostname
           for i in $(seq 1 30); do
             ARGOCD_HOST=$(kubectl get svc argocd-server -n argocd \
               -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
@@ -116,15 +101,12 @@ jobs:
           argocd cluster get eksdemo-staging-cluster 2>/dev/null || \
             argocd cluster add eksdemo-staging-cluster --name eksdemo-staging-cluster --yes || true
 
-          # Restore ClusterIP
           kubectl patch svc argocd-server -n argocd -p '{"spec":{"type":"ClusterIP"}}' || true
 
           kubectl config use-context "$PROD_CONTEXT"
 
       - name: Update values in Git
         env:
-          IMAGE_TAG: ${{ github.sha }}
-          ECR: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
           ACCOUNT: ${{ secrets.AWS_ACCOUNT_NUMBER }}
         run: |
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -133,14 +115,11 @@ jobs:
 
           sed -i "s|tag:.*|tag: \"${IMAGE_TAG}\"|" ArgoCD/frontend/helm_chart/values.staging.yaml
           sed -i "s|tag:.*|tag: \"${IMAGE_TAG}\"|" ArgoCD/backend/helm_chart/values.staging.yaml
-
-          # Replace ACCOUNT_ID placeholder and IRSA ARNs across all values files
           sed -i "s|ACCOUNT_ID|${ACCOUNT}|g" ArgoCD/backend/helm_chart/values.staging.yaml
           sed -i "s|arn:aws:iam::[^:]*:role/|arn:aws:iam::${ACCOUNT}:role/|g" ArgoCD/backend/helm_chart/values.staging.yaml
 
           VPC_ID=$(aws eks describe-cluster --name ${{ env.CLUSTER_NAME }} \
             --query 'cluster.resourcesVpcConfig.vpcId' --output text --region ${{ env.AWS_REGION }})
-          IRSA_ARN="arn:aws:iam::${ACCOUNT}:role/eksdemo-staging-lb-controller-role"
           sed -i "s|vpcId: \"[^\"]*\"|vpcId: \"${VPC_ID}\"|" ${{ env.ALB_FILE }}
           sed -i "s|arn:aws:iam::[^:]*:role/|arn:aws:iam::${ACCOUNT}:role/|g" ${{ env.ALB_FILE }}
 
@@ -165,145 +144,3 @@ jobs:
             [ "$i" -eq 40 ] && exit 1
             sleep 15
           done
-
-  # ─────────────────────────────────────────────────────────────────
-  # QA & E2E TESTS
-  # ─────────────────────────────────────────────────────────────────
-  qa-tests:
-    name: QA & E2E Tests
-    runs-on: ubuntu-latest
-    needs: [deploy-staging]
-    if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.stage == 'all' || inputs.stage == 'qa') && needs.deploy-staging.result != 'failure' }}
-    environment: staging
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install QA dependencies
-        run: pip install -r services/tests/qa/requirements.txt
-
-      - name: Run QA tests
-        env:
-          STAGING_FRONTEND_URL: https://stage.saharbittman.com
-          STAGING_BACKEND_URL: https://stage.saharbittman.com/api/backend
-        run: pytest services/tests/qa/ -v --tb=short
-
-      - name: Install E2E dependencies
-        run: pip install -r services/tests/e2e/requirements.txt
-
-      - name: Install Playwright browsers
-        run: playwright install --with-deps chromium
-
-      - name: Run E2E tests
-        env:
-          STAGING_FRONTEND_URL: https://stage.saharbittman.com
-        run: pytest services/tests/e2e/ -v --tb=short
-
-      - name: Upload Playwright report
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: playwright-report
-          path: playwright-report/
-          retention-days: 7
-
-  # ─────────────────────────────────────────────────────────────────
-  # DEPLOY TO PRODUCTION — requires manual approval via GitHub env
-  # ─────────────────────────────────────────────────────────────────
-  deploy-prod:
-    name: Deploy to Production
-    runs-on: ubuntu-latest
-    needs: [qa-tests]
-    if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.stage == 'all' || inputs.stage == 'production') && needs.qa-tests.result != 'failure' }}
-    environment: production
-    env:
-      CLUSTER_NAME: eksdemo-prod-cluster
-      ALB_FILE: ArgoCD/apps/alb-controller-prod.yaml
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ github.token }}
-
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ env.AWS_REGION }}
-          role-session-name: github-actions-deploy-production
-
-      - uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Promote images staging → prod
-        env:
-          ECR: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          for service in frontend backend; do
-            docker pull  "${ECR}/${service}-staging:latest"
-            docker tag   "${ECR}/${service}-staging:latest" "${ECR}/${service}-prod:${IMAGE_TAG}"
-            docker tag   "${ECR}/${service}-staging:latest" "${ECR}/${service}-prod:latest"
-            docker push  "${ECR}/${service}-prod:${IMAGE_TAG}"
-            docker push  "${ECR}/${service}-prod:latest"
-          done
-
-      - name: Connect to prod cluster
-        run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name eksdemo-prod-cluster
-
-      - name: Update values in Git
-        env:
-          IMAGE_TAG: ${{ github.sha }}
-          ECR: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
-          ACCOUNT: ${{ secrets.AWS_ACCOUNT_NUMBER }}
-        run: |
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git config user.name "github-actions[bot]"
-          git pull --rebase
-
-          sed -i "s|tag:.*|tag: \"${IMAGE_TAG}\"|" ArgoCD/frontend/helm_chart/values.prod.yaml
-          sed -i "s|tag:.*|tag: \"${IMAGE_TAG}\"|" ArgoCD/backend/helm_chart/values.prod.yaml
-          sed -i "s|ACCOUNT_ID|${ACCOUNT}|g" ArgoCD/backend/helm_chart/values.prod.yaml
-          sed -i "s|arn:aws:iam::[^:]*:role/|arn:aws:iam::${ACCOUNT}:role/|g" ArgoCD/backend/helm_chart/values.prod.yaml
-
-          VPC_ID=$(aws eks describe-cluster --name ${{ env.CLUSTER_NAME }} \
-            --query 'cluster.resourcesVpcConfig.vpcId' --output text --region ${{ env.AWS_REGION }})
-          IRSA_ARN="arn:aws:iam::${ACCOUNT}:role/eksdemo-prod-lb-controller-role"
-          sed -i "s|vpcId: \"[^\"]*\"|vpcId: \"${VPC_ID}\"|" ${{ env.ALB_FILE }}
-          sed -i "s|arn:aws:iam::[^:]*:role/|arn:aws:iam::${ACCOUNT}:role/|g" ${{ env.ALB_FILE }}
-
-          git add ArgoCD/frontend/helm_chart/values.prod.yaml \
-                  ArgoCD/backend/helm_chart/values.prod.yaml \
-                  ${{ env.ALB_FILE }}
-          git diff --staged --quiet || git commit -m "cd: deploy to production image ${IMAGE_TAG}"
-          git push
-
-      - name: Apply ArgoCD apps
-        run: kubectl apply -f ArgoCD/bootstrap/root-app.yaml
-
-      - name: Wait for apps to be healthy
-        run: |
-          for i in $(seq 1 40); do
-            FRONTEND=$(kubectl get application frontend-prod -n argocd \
-              -o jsonpath='{.status.health.status}' 2>/dev/null || echo "NotFound")
-            BACKEND=$(kubectl get application backend-prod -n argocd \
-              -o jsonpath='{.status.health.status}' 2>/dev/null || echo "NotFound")
-            echo "Attempt $i/40 — frontend: $FRONTEND, backend: $BACKEND"
-            [ "$FRONTEND" = "Healthy" ] && [ "$BACKEND" = "Healthy" ] && break
-            [ "$i" -eq 40 ] && exit 1
-            sleep 15
-          done
-
-      - name: Tag version
-        id: tag
-        uses: mathieudutour/github-tag-action@v6.2
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          default_bump: patch
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.tag.outputs.new_tag }}
-          name: ${{ steps.tag.outputs.new_tag }}
-          body: ${{ steps.tag.outputs.changelog }}
