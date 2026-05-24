@@ -37,6 +37,9 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.stage == 'all' || inputs.stage == 'staging' }}
     environment: staging
+    env:
+      CLUSTER_NAME: eksdemo-staging-cluster
+      ALB_FILE: ArgoCD/apps/alb-controller-staging.yaml
     steps:
       - uses: actions/checkout@v4
         with:
@@ -131,38 +134,19 @@ jobs:
           sed -i "s|tag:.*|tag: \"${IMAGE_TAG}\"|" ArgoCD/frontend/helm_chart/values.staging.yaml
           sed -i "s|tag:.*|tag: \"${IMAGE_TAG}\"|" ArgoCD/backend/helm_chart/values.staging.yaml
 
-          CERT_ARN=$(aws resourcegroupstaggingapi get-resources \
-            --tag-filters Key=Name,Values=saharbittman-ssl \
-            --resource-type-filters acm:certificate \
-            --query 'ResourceTagMappingList[0].ResourceARN' \
-            --output text --region ${{ env.AWS_REGION }})
+          # Replace ACCOUNT_ID placeholder and IRSA ARNs across all values files
+          sed -i "s|ACCOUNT_ID|${ACCOUNT}|g" ArgoCD/backend/helm_chart/values.staging.yaml
+          sed -i "s|arn:aws:iam::[^:]*:role/|arn:aws:iam::${ACCOUNT}:role/|g" ArgoCD/backend/helm_chart/values.staging.yaml
 
-          # Replace ACCOUNT_ID and CERT_ARN placeholders across all values files
-          for f in ArgoCD/frontend/helm_chart/values.staging.yaml \
-                   ArgoCD/frontend/helm_chart/values.prod.yaml \
-                   ArgoCD/backend/helm_chart/values.staging.yaml \
-                   ArgoCD/backend/helm_chart/values.prod.yaml; do
-            sed -i "s|ACCOUNT_ID|${ACCOUNT}|g" "$f"
-            sed -i "s|CERT_ARN|${CERT_ARN}|g" "$f"
-            sed -i "s|arn:aws:iam::[^:]*:role/|arn:aws:iam::${ACCOUNT}:role/|g" "$f"
-          done
-
-          STAGING_VPC=$(aws eks describe-cluster --name eksdemo-staging-cluster \
+          VPC_ID=$(aws eks describe-cluster --name ${{ env.CLUSTER_NAME }} \
             --query 'cluster.resourcesVpcConfig.vpcId' --output text --region ${{ env.AWS_REGION }})
-          sed -i "s|vpcId: \"[^\"]*\"|vpcId: \"${STAGING_VPC}\"|" ArgoCD/apps/alb-controller-staging.yaml
-          sed -i "s|arn:aws:iam::[^:]*:role/|arn:aws:iam::${ACCOUNT}:role/|g" ArgoCD/apps/alb-controller-staging.yaml
-
-          PROD_VPC=$(aws eks describe-cluster --name eksdemo-prod-cluster \
-            --query 'cluster.resourcesVpcConfig.vpcId' --output text --region ${{ env.AWS_REGION }})
-          sed -i "s|vpcId: \"[^\"]*\"|vpcId: \"${PROD_VPC}\"|" ArgoCD/apps/alb-controller-prod.yaml
-          sed -i "s|arn:aws:iam::[^:]*:role/|arn:aws:iam::${ACCOUNT}:role/|g" ArgoCD/apps/alb-controller-prod.yaml
+          IRSA_ARN="arn:aws:iam::${ACCOUNT}:role/eksdemo-staging-lb-controller-role"
+          sed -i "s|vpcId: \"[^\"]*\"|vpcId: \"${VPC_ID}\"|" ${{ env.ALB_FILE }}
+          sed -i "s|arn:aws:iam::[^:]*:role/|arn:aws:iam::${ACCOUNT}:role/|g" ${{ env.ALB_FILE }}
 
           git add ArgoCD/frontend/helm_chart/values.staging.yaml \
-                  ArgoCD/frontend/helm_chart/values.prod.yaml \
                   ArgoCD/backend/helm_chart/values.staging.yaml \
-                  ArgoCD/backend/helm_chart/values.prod.yaml \
-                  ArgoCD/apps/alb-controller-staging.yaml \
-                  ArgoCD/apps/alb-controller-prod.yaml
+                  ${{ env.ALB_FILE }}
           git diff --staged --quiet || git commit -m "cd: deploy to staging image ${IMAGE_TAG}"
           git push
 
@@ -203,8 +187,8 @@ jobs:
 
       - name: Run QA tests
         env:
-          STAGING_FRONTEND_URL: ${{ secrets.STAGING_FRONTEND_URL }}
-          STAGING_BACKEND_URL: ${{ secrets.STAGING_BACKEND_URL }}
+          STAGING_FRONTEND_URL: https://stage.saharbittman.com
+          STAGING_BACKEND_URL: https://stage.saharbittman.com/api/backend
         run: pytest services/tests/qa/ -v --tb=short
 
       - name: Install E2E dependencies
@@ -215,7 +199,7 @@ jobs:
 
       - name: Run E2E tests
         env:
-          STAGING_FRONTEND_URL: ${{ secrets.STAGING_FRONTEND_URL }}
+          STAGING_FRONTEND_URL: https://stage.saharbittman.com
         run: pytest services/tests/e2e/ -v --tb=short
 
       - name: Upload Playwright report
@@ -235,6 +219,9 @@ jobs:
     needs: [qa-tests]
     if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.stage == 'all' || inputs.stage == 'production') && needs.qa-tests.result != 'failure' }}
     environment: production
+    env:
+      CLUSTER_NAME: eksdemo-prod-cluster
+      ALB_FILE: ArgoCD/apps/alb-controller-prod.yaml
     steps:
       - uses: actions/checkout@v4
         with:
@@ -274,25 +261,20 @@ jobs:
           git config user.name "github-actions[bot]"
           git pull --rebase
 
-          sed -i "s|repository:.*|repository: \"${ECR}/frontend-prod\"|" ArgoCD/frontend/helm_chart/values.prod.yaml
           sed -i "s|tag:.*|tag: \"${IMAGE_TAG}\"|" ArgoCD/frontend/helm_chart/values.prod.yaml
-          sed -i "s|repository:.*|repository: \"${ECR}/backend-prod\"|" ArgoCD/backend/helm_chart/values.prod.yaml
           sed -i "s|tag:.*|tag: \"${IMAGE_TAG}\"|" ArgoCD/backend/helm_chart/values.prod.yaml
+          sed -i "s|ACCOUNT_ID|${ACCOUNT}|g" ArgoCD/backend/helm_chart/values.prod.yaml
+          sed -i "s|arn:aws:iam::[^:]*:role/|arn:aws:iam::${ACCOUNT}:role/|g" ArgoCD/backend/helm_chart/values.prod.yaml
 
-          STAGING_VPC=$(aws eks describe-cluster --name eksdemo-staging-cluster \
+          VPC_ID=$(aws eks describe-cluster --name ${{ env.CLUSTER_NAME }} \
             --query 'cluster.resourcesVpcConfig.vpcId' --output text --region ${{ env.AWS_REGION }})
-          sed -i "s|vpcId: \"[^\"]*\"|vpcId: \"${STAGING_VPC}\"|" ArgoCD/apps/alb-controller-staging.yaml
-          sed -i "s|arn:aws:iam::[^:]*:role/|arn:aws:iam::${ACCOUNT}:role/|g" ArgoCD/apps/alb-controller-staging.yaml
-
-          PROD_VPC=$(aws eks describe-cluster --name eksdemo-prod-cluster \
-            --query 'cluster.resourcesVpcConfig.vpcId' --output text --region ${{ env.AWS_REGION }})
-          sed -i "s|vpcId: \"[^\"]*\"|vpcId: \"${PROD_VPC}\"|" ArgoCD/apps/alb-controller-prod.yaml
-          sed -i "s|arn:aws:iam::[^:]*:role/|arn:aws:iam::${ACCOUNT}:role/|g" ArgoCD/apps/alb-controller-prod.yaml
+          IRSA_ARN="arn:aws:iam::${ACCOUNT}:role/eksdemo-prod-lb-controller-role"
+          sed -i "s|vpcId: \"[^\"]*\"|vpcId: \"${VPC_ID}\"|" ${{ env.ALB_FILE }}
+          sed -i "s|arn:aws:iam::[^:]*:role/|arn:aws:iam::${ACCOUNT}:role/|g" ${{ env.ALB_FILE }}
 
           git add ArgoCD/frontend/helm_chart/values.prod.yaml \
                   ArgoCD/backend/helm_chart/values.prod.yaml \
-                  ArgoCD/apps/alb-controller-staging.yaml \
-                  ArgoCD/apps/alb-controller-prod.yaml
+                  ${{ env.ALB_FILE }}
           git diff --staged --quiet || git commit -m "cd: deploy to production image ${IMAGE_TAG}"
           git push
 

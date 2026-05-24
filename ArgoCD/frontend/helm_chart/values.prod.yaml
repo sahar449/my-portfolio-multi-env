@@ -44,7 +44,6 @@ ingress:
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443},{"HTTP":80}]'
     alb.ingress.kubernetes.io/ssl-redirect: '443'
-    alb.ingress.kubernetes.io/certificate-arn: CERT_ARN
     alb.ingress.kubernetes.io/healthcheck-path: /health
     alb.ingress.kubernetes.io/healthcheck-interval-seconds: '15'
     alb.ingress.kubernetes.io/healthy-threshold-count: '2'
@@ -53,9 +52,9 @@ ingress:
     alb.ingress.kubernetes.io/load-balancer-name: portfolio-alb
     alb.ingress.kubernetes.io/load-balancer-attributes: deletion_protection.enabled=false
     alb.ingress.kubernetes.io/target-group-attributes: deregistration_delay.timeout_seconds=10
-    external-dns.alpha.kubernetes.io/hostname: www.saharbittman.com
+    external-dns.alpha.kubernetes.io/hostname: prod.saharbittman.com
   hosts:
-    - host: www.saharbittman.com
+    - host: prod.saharbittman.com
       paths:
         - path: /api/backend
           pathType: Prefix
