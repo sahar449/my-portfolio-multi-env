@@ -3,7 +3,7 @@ app:
   namespace: default
   replicas: 1
   image:
-    repository: "ACCOUNT_ID.dkr.ecr.us-west-2.amazonaws.com/frontend-staging"
+    repository: "634647866665.dkr.ecr.us-west-2.amazonaws.com/frontend-staging"
     tag: "a02ce2a2e4f51bbedd5bb7962faf59869f2ca5cb"
     pullPolicy: Always
   securityContext:
