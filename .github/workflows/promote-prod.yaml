@@ -64,6 +64,7 @@ jobs:
           git pull --rebase
 
           sed -i "s|tag:.*|tag: \"${IMAGE_TAG}\"|" ArgoCD/frontend/helm_chart/values.prod.yaml
+          sed -i "s|ACCOUNT_ID|${ACCOUNT}|g" ArgoCD/frontend/helm_chart/values.prod.yaml
           sed -i "s|tag:.*|tag: \"${IMAGE_TAG}\"|" ArgoCD/backend/helm_chart/values.prod.yaml
           sed -i "s|ACCOUNT_ID|${ACCOUNT}|g" ArgoCD/backend/helm_chart/values.prod.yaml
           sed -i "s|arn:aws:iam::[^:]*:role/|arn:aws:iam::${ACCOUNT}:role/|g" ArgoCD/backend/helm_chart/values.prod.yaml
