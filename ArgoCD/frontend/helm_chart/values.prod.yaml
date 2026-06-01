@@ -49,7 +49,8 @@ ingress:
     alb.ingress.kubernetes.io/healthy-threshold-count: '2'
     alb.ingress.kubernetes.io/unhealthy-threshold-count: '2'
     alb.ingress.kubernetes.io/tags: ManagedBy=argocd,Application=portfolio,Environment=production
-    alb.ingress.kubernetes.io/load-balancer-name: portfolio-alb
+    alb.ingress.kubernetes.io/load-balancer-name: shared-alb
+    alb.ingress.kubernetes.io/group.name: shared-alb
     alb.ingress.kubernetes.io/load-balancer-attributes: deletion_protection.enabled=false
     alb.ingress.kubernetes.io/target-group-attributes: deregistration_delay.timeout_seconds=10
     external-dns.alpha.kubernetes.io/hostname: prod.saharbittman.com
