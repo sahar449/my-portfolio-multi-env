@@ -1,0 +1,96 @@
+name: Promote to Production
+
+on:
+  workflow_run:
+    workflows: ["Deploy"]
+    types: [completed]
+    branches: [dev]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: write
+
+env:
+  AWS_REGION: us-west-2
+  CLUSTER_NAME: eksdemo-prod-cluster
+  ALB_FILE: ArgoCD/apps/prod/alb-controller-prod.yaml
+
+jobs:
+  promote-prod:
+    name: Promote staging → production
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    env:
+      IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ github.token }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-promote-prod
+
+      - uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Promote images staging → production
+        env:
+          ECR: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+        run: |
+          for service in frontend backend; do
+            docker pull  "${ECR}/${service}-staging:latest"
+            docker tag   "${ECR}/${service}-staging:latest" "${ECR}/${service}-prod:${IMAGE_TAG}"
+            docker tag   "${ECR}/${service}-staging:latest" "${ECR}/${service}-prod:latest"
+            docker push  "${ECR}/${service}-prod:${IMAGE_TAG}"
+            docker push  "${ECR}/${service}-prod:latest"
+          done
+
+      - name: Connect to prod cluster
+        run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.CLUSTER_NAME }}
+
+      - name: Update values in Git
+        env:
+          ACCOUNT: ${{ secrets.AWS_ACCOUNT_NUMBER }}
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git pull --rebase
+
+          sed -i "s|tag:.*|tag: \"${IMAGE_TAG}\"|" ArgoCD/frontend/helm_chart/values.prod.yaml
+          sed -i "s|tag:.*|tag: \"${IMAGE_TAG}\"|" ArgoCD/backend/helm_chart/values.prod.yaml
+          sed -i "s|ACCOUNT_ID|${ACCOUNT}|g" ArgoCD/backend/helm_chart/values.prod.yaml
+          sed -i "s|arn:aws:iam::[^:]*:role/|arn:aws:iam::${ACCOUNT}:role/|g" ArgoCD/backend/helm_chart/values.prod.yaml
+
+          VPC_ID=$(aws eks describe-cluster --name ${{ env.CLUSTER_NAME }} \
+            --query 'cluster.resourcesVpcConfig.vpcId' --output text --region ${{ env.AWS_REGION }})
+          sed -i "s|vpcId: \"[^\"]*\"|vpcId: \"${VPC_ID}\"|" ${{ env.ALB_FILE }}
+          sed -i "s|arn:aws:iam::[^:]*:role/|arn:aws:iam::${ACCOUNT}:role/|g" ${{ env.ALB_FILE }}
+
+          git add ArgoCD/frontend/helm_chart/values.prod.yaml \
+                  ArgoCD/backend/helm_chart/values.prod.yaml \
+                  ${{ env.ALB_FILE }}
+          git diff --staged --quiet || git commit -m "cd: promote to production image ${IMAGE_TAG}"
+          git push
+
+      - name: Apply ArgoCD prod apps
+        run: kubectl apply -f ArgoCD/apps/prod/ || true
+
+      - name: Wait for prod apps to be healthy
+        run: |
+          for i in $(seq 1 40); do
+            FRONTEND=$(kubectl get application frontend-prod -n argocd \
+              -o jsonpath='{.status.health.status}' 2>/dev/null || echo "NotFound")
+            BACKEND=$(kubectl get application backend-prod -n argocd \
+              -o jsonpath='{.status.health.status}' 2>/dev/null || echo "NotFound")
+            echo "Attempt $i/40 — frontend: $FRONTEND, backend: $BACKEND"
+            [ "$FRONTEND" = "Healthy" ] && [ "$BACKEND" = "Healthy" ] && break
+            [ "$i" -eq 40 ] && exit 1
+            sleep 15
+          done
