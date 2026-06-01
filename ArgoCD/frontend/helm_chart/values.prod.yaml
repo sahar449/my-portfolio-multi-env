@@ -3,8 +3,8 @@ app:
   namespace: default
   replicas: 2
   image:
-    repository: "ACCOUNT_ID.dkr.ecr.us-west-2.amazonaws.com/frontend-prod"
-    tag: latest
+    repository: "634647866665.dkr.ecr.us-west-2.amazonaws.com/frontend-prod"
+    tag: "578e6b16bdcca27b80dd559772f1cf22f20b324f"
     pullPolicy: Always
   securityContext:
     runAsUser: 1000
