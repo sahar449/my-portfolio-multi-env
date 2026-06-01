@@ -56,17 +56,6 @@ jobs:
       - name: Connect to prod cluster (ArgoCD host)
         run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name eksdemo-prod-cluster
 
-      - name: Install ArgoCD
-        run: |
-          helm repo add argo https://argoproj.github.io/argo-helm || true
-          helm repo update
-          helm upgrade --install argocd argo/argo-cd \
-            --version 7.8.23 \
-            --namespace argocd \
-            --create-namespace \
-            --values ArgoCD/argocd-server-values.yaml \
-            --wait --timeout 10m
-
       - name: Install ArgoCD CLI
         run: |
           curl -sSL -o /usr/local/bin/argocd \

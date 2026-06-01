@@ -54,5 +54,20 @@ module "monitoring" {
 # Cluster components — installed once via Terraform, not per-deploy
 # ─────────────────────────────────────────────────────────────────
 
+resource "helm_release" "argocd" {
+  name             = "argocd"
+  repository       = "https://argoproj.github.io/argo-helm"
+  chart            = "argo-cd"
+  version          = "7.8.23"
+  namespace        = "argocd"
+  create_namespace = true
+  wait             = true
+  timeout          = 600
+
+  values = [file("${path.module}/../../../ArgoCD/argocd-server-values.yaml")]
+
+  depends_on = [module.eks, module.iam]
+}
+
 
 
