@@ -74,7 +74,7 @@ jobs:
 
           # Start port-forward with retry
           for attempt in 1 2 3; do
-            kubectl port-forward svc/argocd-server -n argocd 8080:443 &
+            kubectl port-forward svc/argocd-server -n argocd 8080:80 &
             PF_PID=$!
             sleep 8
             argocd login localhost:8080 \
