@@ -189,6 +189,11 @@ jobs:
                 groups:
                   - system:masters
           EOF
+
+      - name: Print ArgoCD password
+        run: |
+          echo "ArgoCD password: $(kubectl -n argocd get secret argocd-initial-admin-secret \
+            -o jsonpath='{.data.password}' | base64 --decode)"
       # ArgoCD install and staging cluster registration are handled in deploy.yaml
       # - name: Install ArgoCD
       #   run: |
