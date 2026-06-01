@@ -190,13 +190,41 @@ jobs:
                   - system:masters
           EOF
 
+      - name: Install ArgoCD CLI
+        run: |
+          curl -sSL -o /usr/local/bin/argocd \
+            https://github.com/argoproj/argo-cd/releases/download/v2.14.4/argocd-linux-amd64
+          chmod +x /usr/local/bin/argocd
+
+      - name: Register staging cluster and apply root app
+        run: |
+          PROD_CONTEXT=$(kubectl config current-context)
+          kubectl wait --for=condition=available deployment/argocd-server -n argocd --timeout=300s
+
+          ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret \
+            -o jsonpath='{.data.password}' | base64 --decode)
+
+          kubectl port-forward svc/argocd-server -n argocd 8080:80 &
+          PF_PID=$!
+          sleep 10
+
+          argocd login localhost:8080 \
+            --username admin --password "$ARGOCD_PASSWORD" --insecure
+
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} \
+            --name eksdemo-staging-cluster --alias eksdemo-staging-cluster
+
+          argocd cluster get eksdemo-staging-cluster 2>/dev/null || \
+            argocd cluster add eksdemo-staging-cluster --name eksdemo-staging-cluster --yes || true
+
+          kill $PF_PID || true
+          kubectl config use-context "$PROD_CONTEXT"
+          kubectl apply -f ArgoCD/bootstrap/root-app.yaml
+
       - name: Print ArgoCD password
         run: |
           echo "ArgoCD password: $(kubectl -n argocd get secret argocd-initial-admin-secret \
             -o jsonpath='{.data.password}' | base64 --decode)"
-      # ArgoCD install and staging cluster registration are handled in deploy.yaml
-      # - name: Install ArgoCD
-      #   run: |
       #     helm repo add argo https://argoproj.github.io/argo-helm || true
       #     helm repo update
       #     helm upgrade --install argocd argo/argo-cd \
