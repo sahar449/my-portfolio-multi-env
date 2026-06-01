@@ -103,7 +103,7 @@ DB_AVAILABLE = init_with_db()
 
 @app.route("/health")
 def health():
-    return jsonify({"status": "ok"})
+    return jsonify({"status": "ok", "version": "2.0"})
 
 
 @app.route("/health/db")
