@@ -76,6 +76,11 @@ resource "helm_release" "argocd" {
 
   values = [file("${path.module}/../../../ArgoCD/argocd-server-values.yaml")]
 
+  set {
+    name  = "server.ingress.annotations.alb\\.ingress\\.kubernetes\\.io/certificate-arn"
+    value = module.ssl.ssl_cert_arn
+  }
+
   depends_on = [module.eks, module.iam]
 }
 
