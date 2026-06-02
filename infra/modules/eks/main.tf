@@ -229,6 +229,7 @@ resource "aws_eks_addon" "external_dns" {
   addon_name               = "external-dns"
   addon_version            = "v0.21.0-eksbuild.2"
   service_account_role_arn = aws_iam_role.external_dns_role.arn
+  configuration_values     = jsonencode({ policy = "sync" })
   depends_on               = [aws_eks_node_group.backend_nodes, aws_eks_node_group.frontend_nodes]
 }
 
