@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: deploy-staging
+  group: deploy-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -17,8 +17,12 @@ permissions:
 
 env:
   AWS_REGION: us-west-2
+  IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
 
 jobs:
+  # ─────────────────────────────────────────────────────────────────
+  # DEPLOY TO STAGING
+  # ─────────────────────────────────────────────────────────────────
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
@@ -27,7 +31,6 @@ jobs:
     env:
       CLUSTER_NAME: eksdemo-staging-cluster
       ALB_FILE: ArgoCD/apps/stage/alb-controller-staging.yaml
-      IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -84,12 +87,85 @@ jobs:
       - name: Apply ArgoCD apps
         run: kubectl apply -f ArgoCD/bootstrap/root-app.yaml
 
-      - name: Wait for apps to be healthy
+      - name: Wait for staging to be healthy
         run: |
           for i in $(seq 1 40); do
             FRONTEND=$(kubectl get application frontend-staging -n argocd \
               -o jsonpath='{.status.health.status}' 2>/dev/null || echo "NotFound")
             BACKEND=$(kubectl get application backend-staging -n argocd \
+              -o jsonpath='{.status.health.status}' 2>/dev/null || echo "NotFound")
+            echo "Attempt $i/40 — frontend: $FRONTEND, backend: $BACKEND"
+            [ "$FRONTEND" = "Healthy" ] && [ "$BACKEND" = "Healthy" ] && break
+            [ "$i" -eq 40 ] && exit 1
+            sleep 15
+          done
+
+  # ─────────────────────────────────────────────────────────────────
+  # DEPLOY TO PRODUCTION — automatic if staging is healthy
+  # ─────────────────────────────────────────────────────────────────
+  deploy-prod:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [deploy-staging]
+    if: ${{ needs.deploy-staging.result == 'success' }}
+    env:
+      CLUSTER_NAME: eksdemo-prod-cluster
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ github.token }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-deploy-prod
+
+      - uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Promote images staging → production
+        env:
+          ECR: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+        run: |
+          for service in frontend backend; do
+            docker pull  "${ECR}/${service}-staging:latest"
+            docker tag   "${ECR}/${service}-staging:latest" "${ECR}/${service}-prod:${IMAGE_TAG}"
+            docker tag   "${ECR}/${service}-staging:latest" "${ECR}/${service}-prod:latest"
+            docker push  "${ECR}/${service}-prod:${IMAGE_TAG}"
+            docker push  "${ECR}/${service}-prod:latest"
+          done
+
+      - name: Connect to prod cluster
+        run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.CLUSTER_NAME }}
+
+      - name: Update values in Git
+        env:
+          ACCOUNT: ${{ secrets.AWS_ACCOUNT_NUMBER }}
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git pull --rebase
+
+          sed -i "s|tag:.*|tag: \"${IMAGE_TAG}\"|" ArgoCD/frontend/helm_chart/values.prod.yaml
+          sed -i "s|ACCOUNT_ID|${ACCOUNT}|g" ArgoCD/frontend/helm_chart/values.prod.yaml
+          sed -i "s|tag:.*|tag: \"${IMAGE_TAG}\"|" ArgoCD/backend/helm_chart/values.prod.yaml
+          sed -i "s|ACCOUNT_ID|${ACCOUNT}|g" ArgoCD/backend/helm_chart/values.prod.yaml
+          sed -i "s|arn:aws:iam::[^:]*:role/|arn:aws:iam::${ACCOUNT}:role/|g" ArgoCD/backend/helm_chart/values.prod.yaml
+
+          git add ArgoCD/frontend/helm_chart/values.prod.yaml \
+                  ArgoCD/backend/helm_chart/values.prod.yaml
+          git diff --staged --quiet || git commit -m "cd: deploy to production image ${IMAGE_TAG}"
+          git push
+
+      - name: Apply ArgoCD prod apps
+        run: kubectl apply -f ArgoCD/apps/prod/ || true
+
+      - name: Wait for production to be healthy
+        run: |
+          for i in $(seq 1 40); do
+            FRONTEND=$(kubectl get application frontend-prod -n argocd \
+              -o jsonpath='{.status.health.status}' 2>/dev/null || echo "NotFound")
+            BACKEND=$(kubectl get application backend-prod -n argocd \
               -o jsonpath='{.status.health.status}' 2>/dev/null || echo "NotFound")
             echo "Attempt $i/40 — frontend: $FRONTEND, backend: $BACKEND"
             [ "$FRONTEND" = "Healthy" ] && [ "$BACKEND" = "Healthy" ] && break
