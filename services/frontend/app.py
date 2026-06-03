@@ -10,7 +10,7 @@ IMAGES_DIR = os.path.dirname(__file__)
 
 @app.route("/health")
 def health():
-    return jsonify({"status": "ok"})
+    return jsonify({"status": "ok", "version": "2.0"})
 
 
 @app.route("/")
