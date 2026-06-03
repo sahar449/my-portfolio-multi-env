@@ -259,6 +259,28 @@ jobs:
           kubectl delete applications --all -n argocd --ignore-not-found --timeout=60s || true
           kubectl delete applicationsets --all -n argocd --ignore-not-found --timeout=60s || true
 
+      - name: Cleanup External DNS Route53 ownership records
+        run: |
+          ZONE_ID=$(aws route53 list-hosted-zones \
+            --query "HostedZones[?contains(Name,'saharbittman.com')].Id" \
+            --output text | sed 's|/hostedzone/||') || true
+          if [ -z "$ZONE_ID" ]; then echo "No hosted zone found, skipping"; exit 0; fi
+
+          CHANGES=$(aws route53 list-resource-record-sets \
+            --hosted-zone-id "$ZONE_ID" \
+            --query "ResourceRecordSets[?Type=='TXT']" \
+            --output json | \
+            jq '[.[] | select(.ResourceRecords[].Value | contains("heritage=external-dns")) | {Action:"DELETE",ResourceRecordSet:.}] | {Changes:.}')
+
+          if [ "$(echo "$CHANGES" | jq '.Changes | length')" -gt 0 ]; then
+            aws route53 change-resource-record-sets \
+              --hosted-zone-id "$ZONE_ID" \
+              --change-batch "$CHANGES" || true
+            echo "Deleted $(echo "$CHANGES" | jq '.Changes | length') External DNS TXT records"
+          else
+            echo "No External DNS TXT records found"
+          fi
+
   pre-delete-staging:
     name: Pre-delete Staging VPC Resources
     runs-on: ubuntu-latest
