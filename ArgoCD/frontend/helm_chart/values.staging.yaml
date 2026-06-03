@@ -4,7 +4,7 @@ app:
   replicas: 1
   image:
     repository: "634647866665.dkr.ecr.us-west-2.amazonaws.com/frontend-staging"
-    tag: "2f27cf5127129a102eb9562505ec046b55cbb818"
+    tag: "e81225a671094331eb31cdd67d0d6690348de6ea"
     pullPolicy: Always
   securityContext:
     runAsUser: 1000
