@@ -217,8 +217,7 @@ jobs:
           argocd login "$ARGOCD_SERVER" \
             --username admin \
             --password "$ARGOCD_PASSWORD" \
-            --insecure \
-            --grpc-web
+            --insecure
 
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} \
             --name eksdemo-staging-cluster --alias eksdemo-staging-cluster
