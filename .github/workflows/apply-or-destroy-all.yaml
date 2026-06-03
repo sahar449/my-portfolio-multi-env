@@ -218,16 +218,19 @@ jobs:
             --username admin \
             --password "$ARGOCD_PASSWORD" \
             --insecure \
-            --grpc-web || true
+            --grpc-web
 
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} \
             --name eksdemo-staging-cluster --alias eksdemo-staging-cluster
           TARGET_CONTEXT=$(kubectl config current-context)
 
           argocd cluster get eksdemo-staging-cluster 2>/dev/null || \
-            argocd cluster add "$TARGET_CONTEXT" --name eksdemo-staging-cluster --yes || true
+            argocd cluster add "$TARGET_CONTEXT" --name eksdemo-staging-cluster --yes
 
           kubectl config use-context "$PROD_CONTEXT"
+
+          echo "=== Verifying staging cluster is registered ==="
+          argocd cluster get eksdemo-staging-cluster
 
       - name: Print ArgoCD password
         run: |
