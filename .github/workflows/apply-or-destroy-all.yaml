@@ -190,12 +190,6 @@ jobs:
                   - system:masters
           EOF
 
-      - name: Install ArgoCD CLI
-        run: |
-          curl -sSL -o /usr/local/bin/argocd \
-            https://github.com/argoproj/argo-cd/releases/download/v2.14.4/argocd-linux-amd64
-          chmod +x /usr/local/bin/argocd
-
       - name: Register staging cluster with ArgoCD
         run: |
           PROD_CONTEXT=$(kubectl config current-context)
@@ -203,35 +197,66 @@ jobs:
           kubectl wait --for=condition=available deployment/argocd-server \
             -n argocd --timeout=300s
 
-          ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret \
-            -o jsonpath='{.data.password}' | base64 --decode)
-
-          # Use port-forward to avoid DNS propagation dependency.
-          # ArgoCD runs with --insecure so the pod serves plain HTTP on port 8080;
-          # use port 80 and --plaintext so the CLI does not attempt TLS.
-          kubectl port-forward svc/argocd-server -n argocd 8080:80 &
-          PF_PID=$!
-          sleep 5
-
-          argocd login localhost:8080 \
-            --username admin \
-            --password "$ARGOCD_PASSWORD" \
-            --plaintext \
-            --insecure
-
+          # Get staging cluster info
           aws eks update-kubeconfig --region ${{ env.AWS_REGION }} \
             --name eksdemo-staging-cluster --alias eksdemo-staging-cluster
-          TARGET_CONTEXT=$(kubectl config current-context)
+          STAGING_CONTEXT=$(kubectl config current-context)
+          STAGING_ENDPOINT=$(aws eks describe-cluster \
+            --name eksdemo-staging-cluster \
+            --region ${{ env.AWS_REGION }} \
+            --query 'cluster.endpoint' --output text)
 
-          argocd cluster get eksdemo-staging-cluster 2>/dev/null || \
-            argocd cluster add "$TARGET_CONTEXT" --name eksdemo-staging-cluster --yes
+          # Create argocd-manager service account in staging cluster with cluster-admin
+          kubectl --context "$STAGING_CONTEXT" create serviceaccount argocd-manager \
+            -n kube-system --dry-run=client -o yaml | \
+            kubectl --context "$STAGING_CONTEXT" apply -f -
+          kubectl --context "$STAGING_CONTEXT" create clusterrolebinding argocd-manager-admin \
+            --clusterrole=cluster-admin \
+            --serviceaccount=kube-system:argocd-manager \
+            --dry-run=client -o yaml | \
+            kubectl --context "$STAGING_CONTEXT" apply -f -
 
+          # Create a long-lived token secret (required for K8s 1.24+)
+          kubectl --context "$STAGING_CONTEXT" apply -f - <<'MANIFEST'
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: argocd-manager-token
+            namespace: kube-system
+            annotations:
+              kubernetes.io/service-account.name: argocd-manager
+          type: kubernetes.io/service-account-token
+          MANIFEST
+          sleep 10
+
+          BEARER_TOKEN=$(kubectl --context "$STAGING_CONTEXT" get secret argocd-manager-token \
+            -n kube-system -o jsonpath='{.data.token}' | base64 --decode)
+          STAGING_CA=$(kubectl --context "$STAGING_CONTEXT" get secret argocd-manager-token \
+            -n kube-system -o jsonpath='{.data.ca\.crt}')
+
+          # Switch back to prod context
           kubectl config use-context "$PROD_CONTEXT"
 
-          echo "=== Verifying staging cluster is registered ==="
-          argocd cluster get eksdemo-staging-cluster
+          # Build the cluster config JSON safely with jq
+          CONFIG=$(jq -n \
+            --arg token "$BEARER_TOKEN" \
+            --arg ca "$STAGING_CA" \
+            '{"bearerToken":$token,"tlsClientConfig":{"insecure":false,"caData":$ca}}')
 
-          kill $PF_PID 2>/dev/null || true
+          # Create the ArgoCD cluster secret directly — no argocd CLI or port-forward needed
+          kubectl create secret generic cluster-eksdemo-staging \
+            -n argocd \
+            --from-literal=name=eksdemo-staging-cluster \
+            --from-literal=server="$STAGING_ENDPOINT" \
+            --from-literal=config="$CONFIG" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl label secret cluster-eksdemo-staging -n argocd \
+            argocd.argoproj.io/secret-type=cluster --overwrite
+
+          echo "=== Verifying staging cluster is registered ==="
+          kubectl get secret cluster-eksdemo-staging -n argocd \
+            -o jsonpath='{.metadata.labels}' && echo ""
+          echo "Server: $STAGING_ENDPOINT"
 
       - name: Print ArgoCD password
         run: |
