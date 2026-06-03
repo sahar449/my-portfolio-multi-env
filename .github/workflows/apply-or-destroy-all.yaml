@@ -200,11 +200,14 @@ jobs:
         run: |
           PROD_CONTEXT=$(kubectl config current-context)
 
-          for i in $(seq 1 30); do
+          kubectl wait --for=condition=available deployment/argocd-server \
+            -n argocd --timeout=300s
+
+          for i in $(seq 1 20); do
             ARGOCD_SERVER=$(kubectl get ingress argocd-server -n argocd \
               -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
             [ -n "$ARGOCD_SERVER" ] && break
-            echo "Waiting for ArgoCD ingress... attempt $i/30"
+            echo "Waiting for ArgoCD ALB... attempt $i/20"
             sleep 20
           done
 
