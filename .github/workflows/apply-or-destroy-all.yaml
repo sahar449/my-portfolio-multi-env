@@ -196,7 +196,7 @@ jobs:
             https://github.com/argoproj/argo-cd/releases/download/v2.14.4/argocd-linux-amd64
           chmod +x /usr/local/bin/argocd
 
-      - name: Register staging cluster and apply root app
+      - name: Register staging cluster with ArgoCD
         run: |
           PROD_CONTEXT=$(kubectl config current-context)
 
@@ -225,7 +225,6 @@ jobs:
             argocd cluster add "$TARGET_CONTEXT" --name eksdemo-staging-cluster --yes || true
 
           kubectl config use-context "$PROD_CONTEXT"
-          kubectl apply -f ArgoCD/bootstrap/root-app.yaml
 
       - name: Print ArgoCD password
         run: |
