@@ -203,18 +203,10 @@ jobs:
           kubectl wait --for=condition=available deployment/argocd-server \
             -n argocd --timeout=300s
 
-          for i in $(seq 1 20); do
-            ARGOCD_SERVER=$(kubectl get ingress argocd-server -n argocd \
-              -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
-            [ -n "$ARGOCD_SERVER" ] && break
-            echo "Waiting for ArgoCD ALB... attempt $i/20"
-            sleep 20
-          done
-
           ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret \
             -o jsonpath='{.data.password}' | base64 --decode)
 
-          argocd login "$ARGOCD_SERVER" \
+          argocd login argocd.saharbittman.com \
             --username admin \
             --password "$ARGOCD_PASSWORD" \
             --insecure
