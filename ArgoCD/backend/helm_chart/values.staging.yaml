@@ -4,7 +4,7 @@ app:
   replicas: 1
   image:
     repository: "634647866665.dkr.ecr.us-west-2.amazonaws.com/backend-staging"
-    tag: latest
+    tag: fc4bb2139f7ca537c85475a793a802ba4322306f
     pullPolicy: Always
   securityContext:
     runAsUser: 1000
