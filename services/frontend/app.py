@@ -8,9 +8,15 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1)
 IMAGES_DIR = os.path.dirname(__file__)
 
 
+BUILD_INFO = {
+    "version": "4.0",
+    "environment": os.getenv("APP_ENV", "development"),
+}
+
+
 @app.route("/health")
 def health():
-    return jsonify({"status": "ok", "version": "4.0"})
+    return jsonify({"status": "ok", **BUILD_INFO})
 
 
 @app.route("/")
