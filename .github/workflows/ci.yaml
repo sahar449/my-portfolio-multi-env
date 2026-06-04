@@ -97,8 +97,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HEAD: ${{ github.ref_name }}
         run: |
-          COMMITS=$(git log origin/dev..HEAD --oneline | wc -l)
-          if [ "$COMMITS" -eq 0 ]; then
+          AHEAD=$(gh api repos/${{ github.repository }}/compare/dev...$HEAD --jq '.ahead_by')
+          if [ "$AHEAD" -eq 0 ]; then
             echo "No commits ahead of dev — skipping PR"
             exit 0
           fi
