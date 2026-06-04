@@ -108,8 +108,8 @@ jobs:
 
       - name: Run QA tests
         env:
-          STAGING_FRONTEND_URL: ${{ secrets.STAGING_FRONTEND_URL }}
-          STAGING_BACKEND_URL: ${{ secrets.STAGING_BACKEND_URL }}
+          STAGING_FRONTEND_URL: https://stage.saharbittman.com
+          STAGING_BACKEND_URL: https://stage.saharbittman.com
         run: pytest services/tests/qa/ -v --tb=short
 
       - name: Install E2E dependencies
@@ -120,7 +120,7 @@ jobs:
 
       - name: Run E2E tests
         env:
-          STAGING_FRONTEND_URL: ${{ secrets.STAGING_FRONTEND_URL }}
+          STAGING_FRONTEND_URL: https://stage.saharbittman.com
         run: pytest services/tests/e2e/ -v --tb=short
 
       - name: Upload Playwright report
