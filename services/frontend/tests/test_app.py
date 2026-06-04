@@ -15,7 +15,7 @@ def test_health(client):
     assert response.status_code == 200
     data = response.get_json()
     assert data["status"] == "ok"
-    assert data["version"] == "4.0"
+    assert data["version"] == "5.0"
 
 
 def test_index(client):
