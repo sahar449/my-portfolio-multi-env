@@ -804,3 +804,50 @@ jobs:
           echo "Dev VPC cleanup done"
       - name: Cleanup state
         run: aws s3 rm s3://${{ env.TF_STATE_BUCKET }}/eksdemo/dev/ --recursive || true
+
+  cleanup-dns:
+    name: Cleanup Route53 DNS Records
+    runs-on: ubuntu-latest
+    needs: [destroy-dev, destroy-staging, destroy-prod]
+    if: ${{ always() && inputs.action == 'destroy' }}
+    continue-on-error: true
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-cleanup-dns
+      - name: Delete all A/AAAA/TXT records and verify zone is clean
+        run: |
+          ZONE_ID=$(aws route53 list-hosted-zones \
+            --query "HostedZones[?contains(Name,'saharbittman.com')].Id" \
+            --output text | sed 's|/hostedzone/||')
+          if [ -z "$ZONE_ID" ]; then echo "No hosted zone found, skipping"; exit 0; fi
+
+          # Use jq to build DELETE batch for A, AAAA, TXT — skip NS, SOA, CNAME
+          RECORDS=$(aws route53 list-resource-record-sets \
+            --hosted-zone-id "$ZONE_ID" --output json)
+
+          CHANGES=$(echo "$RECORDS" | jq '[
+            .ResourceRecordSets[]
+            | select(.Type != "NS" and .Type != "SOA" and .Type != "CNAME")
+            | {Action: "DELETE", ResourceRecordSet: .}
+          ] | {Changes: .}')
+
+          COUNT=$(echo "$CHANGES" | jq '.Changes | length')
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "No A/AAAA/TXT records to delete"
+          else
+            echo "Deleting $COUNT DNS records..."
+            aws route53 change-resource-record-sets \
+              --hosted-zone-id "$ZONE_ID" \
+              --change-batch "$CHANGES"
+            echo "Done"
+          fi
+
+          echo "=== Remaining records in zone ==="
+          aws route53 list-resource-record-sets \
+            --hosted-zone-id "$ZONE_ID" \
+            --query "ResourceRecordSets[*].{Name:Name,Type:Type}" \
+            --output table
