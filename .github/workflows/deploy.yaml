@@ -104,7 +104,7 @@ jobs:
       - name: Run QA tests
         env:
           STAGING_FRONTEND_URL: https://stage.saharbittman.com
-          STAGING_BACKEND_URL: https://stage.saharbittman.com
+          STAGING_BACKEND_URL: https://stage.saharbittman.com/api/backend
         run: |
           pip install -r services/tests/qa/requirements.txt
           pytest services/tests/qa/ -v --tb=short
