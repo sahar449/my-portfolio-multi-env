@@ -2,7 +2,7 @@ name: Deploy
 
 on:
   push:
-    branches: [staging, main]
+    branches: [dev, main]
     paths: ['services/**']
   workflow_dispatch:
     inputs:
@@ -33,7 +33,7 @@ jobs:
     name: Deploy to Staging
     runs-on: ubuntu-latest
     if: |
-      (github.ref == 'refs/heads/staging' && github.event_name == 'push') ||
+      (github.ref == 'refs/heads/dev' && github.event_name == 'push') ||
       (github.event_name == 'workflow_dispatch' && inputs.stage == 'staging')
     environment: staging
     steps:
