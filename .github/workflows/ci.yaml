@@ -113,3 +113,11 @@ jobs:
               --title "[$HEAD] → dev" \
               --body "CI passed (tests + build + smoke tests). Ready for review."
           fi
+
+          # Push empty commit to trigger pull_request:synchronize event so
+          # status checks are reported on the PR. The push path filter (services/**)
+          # prevents this from re-triggering the push-based CI run.
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git commit --allow-empty -m "ci: trigger PR status checks"
+          git push origin "$HEAD"
