@@ -13,7 +13,7 @@ def client():
 def test_health(client):
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.get_json() == {"status": "ok", "version": "3.0"}
+    assert response.get_json() == {"status": "ok", "version": "4.0"}
 
 
 def test_index(client):
