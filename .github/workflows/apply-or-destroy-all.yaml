@@ -336,20 +336,53 @@ jobs:
             --query "Vpcs[0].VpcId" --output text 2>/dev/null || echo "")
           if [ -z "${VPC_ID}" ] || [ "${VPC_ID}" = "None" ]; then exit 0; fi
 
+          echo "=== Delete ALBs and poll until gone ==="
           LB_ARNS=$(aws elbv2 describe-load-balancers \
             --query "LoadBalancers[?VpcId=='${VPC_ID}'].LoadBalancerArn" --output text || true)
           for arn in ${LB_ARNS}; do aws elbv2 delete-load-balancer --load-balancer-arn "$arn" || true; done
-          [ -n "${LB_ARNS}" ] && sleep 15
+          if [ -n "${LB_ARNS}" ]; then
+            for i in $(seq 1 20); do
+              REMAINING=$(aws elbv2 describe-load-balancers \
+                --query "LoadBalancers[?VpcId=='${VPC_ID}'].LoadBalancerArn" --output text || true)
+              [ -z "$REMAINING" ] && break
+              echo "Waiting for ALBs... ($i/20)"; sleep 15
+            done
+            sleep 30
+          fi
 
+          echo "=== Delete target groups ==="
           TG_ARNS=$(aws elbv2 describe-target-groups \
             --query "TargetGroups[?VpcId=='${VPC_ID}'].TargetGroupArn" --output text || true)
           for arn in ${TG_ARNS}; do aws elbv2 delete-target-group --target-group-arn "$arn" || true; done
 
+          echo "=== Delete NAT gateways and poll until fully deleted ==="
+          NATS=$(aws ec2 describe-nat-gateways \
+            --filter "Name=vpc-id,Values=${VPC_ID}" \
+            --query "NatGateways[?State!='deleted'].NatGatewayId" --output text || true)
+          for nat in ${NATS}; do aws ec2 delete-nat-gateway --nat-gateway-id "$nat" || true; done
+          if [ -n "${NATS}" ]; then
+            for i in $(seq 1 20); do
+              REMAINING=$(aws ec2 describe-nat-gateways \
+                --filter "Name=vpc-id,Values=${VPC_ID}" \
+                --query "NatGateways[?State!='deleted'].NatGatewayId" --output text || true)
+              [ -z "$REMAINING" ] && echo "All NAT gateways deleted" && break
+              echo "Waiting for NAT gateways... ($i/20)"; sleep 15
+            done
+          fi
+
+          echo "=== Release EIPs ==="
+          EIPS=$(aws ec2 describe-addresses \
+            --filters "Name=domain,Values=vpc" \
+            --query "Addresses[?AssociationId==null].AllocationId" --output text || true)
+          for eip in ${EIPS}; do aws ec2 release-address --allocation-id "$eip" || true; done
+
+          echo "=== Delete security groups ==="
           SGS=$(aws ec2 describe-security-groups \
             --filters "Name=vpc-id,Values=${VPC_ID}" \
             --query "SecurityGroups[?GroupName!='default'].GroupId" --output text || true)
           for sg in ${SGS}; do aws ec2 delete-security-group --group-id "$sg" || true; done
 
+          echo "=== Delete available ENIs ==="
           ENIS=$(aws ec2 describe-network-interfaces \
             --filters "Name=vpc-id,Values=${VPC_ID}" \
             --query "NetworkInterfaces[?Status=='available'].NetworkInterfaceId" --output text || true)
@@ -372,6 +405,12 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: github-actions-pre-delete-prod
+      - name: Connect to prod cluster
+        run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name eksdemo-prod-cluster || true
+      - name: Uninstall Helm releases before Terraform destroy
+        run: |
+          helm uninstall aws-load-balancer-controller -n kube-system || true
+          helm uninstall argocd -n argocd || true
       - name: Cleanup VPC resources
         run: |
           VPC_ID=$(aws ec2 describe-vpcs \
@@ -379,20 +418,53 @@ jobs:
             --query "Vpcs[0].VpcId" --output text 2>/dev/null || echo "")
           if [ -z "${VPC_ID}" ] || [ "${VPC_ID}" = "None" ]; then exit 0; fi
 
+          echo "=== Delete ALBs and poll until gone ==="
           LB_ARNS=$(aws elbv2 describe-load-balancers \
             --query "LoadBalancers[?VpcId=='${VPC_ID}'].LoadBalancerArn" --output text || true)
           for arn in ${LB_ARNS}; do aws elbv2 delete-load-balancer --load-balancer-arn "$arn" || true; done
-          [ -n "${LB_ARNS}" ] && sleep 15
+          if [ -n "${LB_ARNS}" ]; then
+            for i in $(seq 1 20); do
+              REMAINING=$(aws elbv2 describe-load-balancers \
+                --query "LoadBalancers[?VpcId=='${VPC_ID}'].LoadBalancerArn" --output text || true)
+              [ -z "$REMAINING" ] && break
+              echo "Waiting for ALBs... ($i/20)"; sleep 15
+            done
+            sleep 30
+          fi
 
+          echo "=== Delete target groups ==="
           TG_ARNS=$(aws elbv2 describe-target-groups \
             --query "TargetGroups[?VpcId=='${VPC_ID}'].TargetGroupArn" --output text || true)
           for arn in ${TG_ARNS}; do aws elbv2 delete-target-group --target-group-arn "$arn" || true; done
 
+          echo "=== Delete NAT gateways and poll until fully deleted ==="
+          NATS=$(aws ec2 describe-nat-gateways \
+            --filter "Name=vpc-id,Values=${VPC_ID}" \
+            --query "NatGateways[?State!='deleted'].NatGatewayId" --output text || true)
+          for nat in ${NATS}; do aws ec2 delete-nat-gateway --nat-gateway-id "$nat" || true; done
+          if [ -n "${NATS}" ]; then
+            for i in $(seq 1 20); do
+              REMAINING=$(aws ec2 describe-nat-gateways \
+                --filter "Name=vpc-id,Values=${VPC_ID}" \
+                --query "NatGateways[?State!='deleted'].NatGatewayId" --output text || true)
+              [ -z "$REMAINING" ] && echo "All NAT gateways deleted" && break
+              echo "Waiting for NAT gateways... ($i/20)"; sleep 15
+            done
+          fi
+
+          echo "=== Release EIPs ==="
+          EIPS=$(aws ec2 describe-addresses \
+            --filters "Name=domain,Values=vpc" \
+            --query "Addresses[?AssociationId==null].AllocationId" --output text || true)
+          for eip in ${EIPS}; do aws ec2 release-address --allocation-id "$eip" || true; done
+
+          echo "=== Delete security groups ==="
           SGS=$(aws ec2 describe-security-groups \
             --filters "Name=vpc-id,Values=${VPC_ID}" \
             --query "SecurityGroups[?GroupName!='default'].GroupId" --output text || true)
           for sg in ${SGS}; do aws ec2 delete-security-group --group-id "$sg" || true; done
 
+          echo "=== Delete available ENIs ==="
           ENIS=$(aws ec2 describe-network-interfaces \
             --filters "Name=vpc-id,Values=${VPC_ID}" \
             --query "NetworkInterfaces[?Status=='available'].NetworkInterfaceId" --output text || true)
@@ -497,11 +569,38 @@ jobs:
             LB_ARNS=$(aws elbv2 describe-load-balancers \
               --query "LoadBalancers[?VpcId=='${VPC_ID}'].LoadBalancerArn" --output text || true)
             for arn in ${LB_ARNS}; do aws elbv2 delete-load-balancer --load-balancer-arn "$arn" || true; done
-            [ -n "${LB_ARNS}" ] && sleep 15
+            if [ -n "${LB_ARNS}" ]; then
+              for i in $(seq 1 20); do
+                REMAINING=$(aws elbv2 describe-load-balancers \
+                  --query "LoadBalancers[?VpcId=='${VPC_ID}'].LoadBalancerArn" --output text || true)
+                [ -z "$REMAINING" ] && break
+                echo "Waiting for ALBs... ($i/20)"; sleep 15
+              done
+              sleep 30
+            fi
 
             TG_ARNS=$(aws elbv2 describe-target-groups \
               --query "TargetGroups[?VpcId=='${VPC_ID}'].TargetGroupArn" --output text || true)
             for arn in ${TG_ARNS}; do aws elbv2 delete-target-group --target-group-arn "$arn" || true; done
+
+            NATS=$(aws ec2 describe-nat-gateways \
+              --filter "Name=vpc-id,Values=${VPC_ID}" \
+              --query "NatGateways[?State!='deleted'].NatGatewayId" --output text || true)
+            for nat in ${NATS}; do aws ec2 delete-nat-gateway --nat-gateway-id "$nat" || true; done
+            if [ -n "${NATS}" ]; then
+              for i in $(seq 1 20); do
+                REMAINING=$(aws ec2 describe-nat-gateways \
+                  --filter "Name=vpc-id,Values=${VPC_ID}" \
+                  --query "NatGateways[?State!='deleted'].NatGatewayId" --output text || true)
+                [ -z "$REMAINING" ] && break
+                echo "Waiting for NAT gateways... ($i/20)"; sleep 15
+              done
+            fi
+
+            EIPS=$(aws ec2 describe-addresses \
+              --filters "Name=domain,Values=vpc" \
+              --query "Addresses[?AssociationId==null].AllocationId" --output text || true)
+            for eip in ${EIPS}; do aws ec2 release-address --allocation-id "$eip" || true; done
 
             SGS=$(aws ec2 describe-security-groups \
               --filters "Name=vpc-id,Values=${VPC_ID}" \
