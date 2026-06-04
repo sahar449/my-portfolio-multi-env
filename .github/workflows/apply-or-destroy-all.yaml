@@ -573,6 +573,42 @@ jobs:
       - name: Terraform Destroy
         working-directory: infra/envs/staging
         run: terraform destroy -auto-approve
+        continue-on-error: true
+      - name: Post-cleanup staging VPC (if Terraform timed out or left it)
+        run: |
+          VPC_ID=$(aws ec2 describe-vpcs \
+            --filters "Name=tag:Name,Values=eksdemo-staging-vpc" \
+            --query "Vpcs[0].VpcId" --output text 2>/dev/null || echo "")
+          if [ -z "$VPC_ID" ] || [ "$VPC_ID" = "None" ]; then
+            echo "Staging VPC already deleted"; exit 0
+          fi
+          echo "Staging VPC $VPC_ID still exists — cleaning up remaining resources..."
+          SGS=$(aws ec2 describe-security-groups --filters "Name=vpc-id,Values=$VPC_ID" \
+            --query "SecurityGroups[?GroupName!='default'].GroupId" --output text || true)
+          for sg in $SGS; do
+            INGRESS=$(aws ec2 describe-security-groups --group-ids "$sg" --query "SecurityGroups[0].IpPermissions" --output json)
+            EGRESS=$(aws ec2 describe-security-groups --group-ids "$sg" --query "SecurityGroups[0].IpPermissionsEgress" --output json)
+            [ "$INGRESS" != "[]" ] && aws ec2 revoke-security-group-ingress --group-id "$sg" --ip-permissions "$INGRESS" 2>/dev/null || true
+            [ "$EGRESS" != "[]" ] && aws ec2 revoke-security-group-egress --group-id "$sg" --ip-permissions "$EGRESS" 2>/dev/null || true
+            aws ec2 delete-security-group --group-id "$sg" || true
+          done
+          ENIS=$(aws ec2 describe-network-interfaces --filters "Name=vpc-id,Values=$VPC_ID" "Name=status,Values=available" \
+            --query "NetworkInterfaces[*].NetworkInterfaceId" --output text || true)
+          for eni in $ENIS; do aws ec2 delete-network-interface --network-interface-id "$eni" || true; done
+          IGWS=$(aws ec2 describe-internet-gateways --filters "Name=attachment.vpc-id,Values=$VPC_ID" \
+            --query "InternetGateways[*].InternetGatewayId" --output text || true)
+          for igw in $IGWS; do
+            aws ec2 detach-internet-gateway --internet-gateway-id "$igw" --vpc-id "$VPC_ID" || true
+            aws ec2 delete-internet-gateway --internet-gateway-id "$igw" || true
+          done
+          SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" \
+            --query "Subnets[*].SubnetId" --output text || true)
+          for subnet in $SUBNETS; do aws ec2 delete-subnet --subnet-id "$subnet" || true; done
+          RTS=$(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$VPC_ID" \
+            --query "RouteTables[?Associations[?Main!=\`true\`] || !Associations].RouteTableId" --output text || true)
+          for rt in $RTS; do aws ec2 delete-route-table --route-table-id "$rt" || true; done
+          aws ec2 delete-vpc --vpc-id "$VPC_ID" || true
+          echo "Staging VPC cleanup done"
       - name: Cleanup state
         run: aws s3 rm s3://${{ env.TF_STATE_BUCKET }}/eksdemo/staging/ --recursive || true
 
@@ -605,6 +641,42 @@ jobs:
       - name: Terraform Destroy
         working-directory: infra/envs/production
         run: terraform destroy -auto-approve
+        continue-on-error: true
+      - name: Post-cleanup prod VPC (if Terraform timed out or left it)
+        run: |
+          VPC_ID=$(aws ec2 describe-vpcs \
+            --filters "Name=tag:Name,Values=eksdemo-prod-vpc" \
+            --query "Vpcs[0].VpcId" --output text 2>/dev/null || echo "")
+          if [ -z "$VPC_ID" ] || [ "$VPC_ID" = "None" ]; then
+            echo "Prod VPC already deleted"; exit 0
+          fi
+          echo "Prod VPC $VPC_ID still exists — cleaning up remaining resources..."
+          SGS=$(aws ec2 describe-security-groups --filters "Name=vpc-id,Values=$VPC_ID" \
+            --query "SecurityGroups[?GroupName!='default'].GroupId" --output text || true)
+          for sg in $SGS; do
+            INGRESS=$(aws ec2 describe-security-groups --group-ids "$sg" --query "SecurityGroups[0].IpPermissions" --output json)
+            EGRESS=$(aws ec2 describe-security-groups --group-ids "$sg" --query "SecurityGroups[0].IpPermissionsEgress" --output json)
+            [ "$INGRESS" != "[]" ] && aws ec2 revoke-security-group-ingress --group-id "$sg" --ip-permissions "$INGRESS" 2>/dev/null || true
+            [ "$EGRESS" != "[]" ] && aws ec2 revoke-security-group-egress --group-id "$sg" --ip-permissions "$EGRESS" 2>/dev/null || true
+            aws ec2 delete-security-group --group-id "$sg" || true
+          done
+          ENIS=$(aws ec2 describe-network-interfaces --filters "Name=vpc-id,Values=$VPC_ID" "Name=status,Values=available" \
+            --query "NetworkInterfaces[*].NetworkInterfaceId" --output text || true)
+          for eni in $ENIS; do aws ec2 delete-network-interface --network-interface-id "$eni" || true; done
+          IGWS=$(aws ec2 describe-internet-gateways --filters "Name=attachment.vpc-id,Values=$VPC_ID" \
+            --query "InternetGateways[*].InternetGatewayId" --output text || true)
+          for igw in $IGWS; do
+            aws ec2 detach-internet-gateway --internet-gateway-id "$igw" --vpc-id "$VPC_ID" || true
+            aws ec2 delete-internet-gateway --internet-gateway-id "$igw" || true
+          done
+          SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" \
+            --query "Subnets[*].SubnetId" --output text || true)
+          for subnet in $SUBNETS; do aws ec2 delete-subnet --subnet-id "$subnet" || true; done
+          RTS=$(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$VPC_ID" \
+            --query "RouteTables[?Associations[?Main!=\`true\`] || !Associations].RouteTableId" --output text || true)
+          for rt in $RTS; do aws ec2 delete-route-table --route-table-id "$rt" || true; done
+          aws ec2 delete-vpc --vpc-id "$VPC_ID" || true
+          echo "Prod VPC cleanup done"
       - name: Cleanup state
         run: aws s3 rm s3://${{ env.TF_STATE_BUCKET }}/eksdemo/prod/ --recursive || true
 
@@ -694,5 +766,41 @@ jobs:
       - name: Terraform Destroy
         working-directory: infra/envs/dev
         run: terraform destroy -auto-approve
+        continue-on-error: true
+      - name: Post-cleanup dev VPC (if Terraform timed out or left it)
+        run: |
+          VPC_ID=$(aws ec2 describe-vpcs \
+            --filters "Name=tag:Name,Values=eksdemo-dev-vpc" \
+            --query "Vpcs[0].VpcId" --output text 2>/dev/null || echo "")
+          if [ -z "$VPC_ID" ] || [ "$VPC_ID" = "None" ]; then
+            echo "Dev VPC already deleted"; exit 0
+          fi
+          echo "Dev VPC $VPC_ID still exists — cleaning up remaining resources..."
+          SGS=$(aws ec2 describe-security-groups --filters "Name=vpc-id,Values=$VPC_ID" \
+            --query "SecurityGroups[?GroupName!='default'].GroupId" --output text || true)
+          for sg in $SGS; do
+            INGRESS=$(aws ec2 describe-security-groups --group-ids "$sg" --query "SecurityGroups[0].IpPermissions" --output json)
+            EGRESS=$(aws ec2 describe-security-groups --group-ids "$sg" --query "SecurityGroups[0].IpPermissionsEgress" --output json)
+            [ "$INGRESS" != "[]" ] && aws ec2 revoke-security-group-ingress --group-id "$sg" --ip-permissions "$INGRESS" 2>/dev/null || true
+            [ "$EGRESS" != "[]" ] && aws ec2 revoke-security-group-egress --group-id "$sg" --ip-permissions "$EGRESS" 2>/dev/null || true
+            aws ec2 delete-security-group --group-id "$sg" || true
+          done
+          ENIS=$(aws ec2 describe-network-interfaces --filters "Name=vpc-id,Values=$VPC_ID" "Name=status,Values=available" \
+            --query "NetworkInterfaces[*].NetworkInterfaceId" --output text || true)
+          for eni in $ENIS; do aws ec2 delete-network-interface --network-interface-id "$eni" || true; done
+          IGWS=$(aws ec2 describe-internet-gateways --filters "Name=attachment.vpc-id,Values=$VPC_ID" \
+            --query "InternetGateways[*].InternetGatewayId" --output text || true)
+          for igw in $IGWS; do
+            aws ec2 detach-internet-gateway --internet-gateway-id "$igw" --vpc-id "$VPC_ID" || true
+            aws ec2 delete-internet-gateway --internet-gateway-id "$igw" || true
+          done
+          SUBNETS=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" \
+            --query "Subnets[*].SubnetId" --output text || true)
+          for subnet in $SUBNETS; do aws ec2 delete-subnet --subnet-id "$subnet" || true; done
+          RTS=$(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$VPC_ID" \
+            --query "RouteTables[?Associations[?Main!=\`true\`] || !Associations].RouteTableId" --output text || true)
+          for rt in $RTS; do aws ec2 delete-route-table --route-table-id "$rt" || true; done
+          aws ec2 delete-vpc --vpc-id "$VPC_ID" || true
+          echo "Dev VPC cleanup done"
       - name: Cleanup state
         run: aws s3 rm s3://${{ env.TF_STATE_BUCKET }}/eksdemo/dev/ --recursive || true
