@@ -264,6 +264,76 @@ jobs:
             -o jsonpath='{.data.password}' | base64 --decode)"
 
   # ─────────────────────────────────────────────────────────────────
+  # TRIGGER CI → DEPLOY AFTER INFRA IS READY
+  # ─────────────────────────────────────────────────────────────────
+
+  run-pipeline:
+    name: Trigger CI → Deploy
+    runs-on: ubuntu-latest
+    needs: [apply-dev, apply-staging, apply-prod]
+    if: ${{ inputs.action == 'apply' }}
+    steps:
+      - name: Trigger CI and wait for it to complete
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref_name }}
+        run: |
+          echo "=== Triggering CI workflow ==="
+          gh workflow run ci.yaml --repo "$REPO" --ref "$REF"
+          sleep 10
+
+          # Get the run ID of the CI run we just triggered (most recent)
+          CI_RUN_ID=$(gh run list --repo "$REPO" --workflow ci.yaml \
+            --limit 1 --json databaseId -q '.[0].databaseId')
+          echo "CI run ID: $CI_RUN_ID"
+
+          echo "=== Waiting for CI to complete ==="
+          for i in $(seq 1 60); do
+            STATUS=$(gh run view "$CI_RUN_ID" --repo "$REPO" \
+              --json status,conclusion -q '.status + ":" + (.conclusion // "")')
+            echo "CI status ($i/60): $STATUS"
+            [[ "$STATUS" == "completed:"* ]] && break
+            sleep 30
+          done
+
+          CONCLUSION=$(gh run view "$CI_RUN_ID" --repo "$REPO" \
+            --json conclusion -q '.conclusion')
+          echo "CI conclusion: $CONCLUSION"
+          if [ "$CONCLUSION" != "success" ]; then
+            echo "CI failed — skipping Deploy"
+            exit 1
+          fi
+
+      - name: Trigger Deploy and wait for it to complete
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref_name }}
+        run: |
+          echo "=== Triggering Deploy workflow ==="
+          gh workflow run deploy.yaml --repo "$REPO" --ref "$REF"
+          sleep 10
+
+          DEPLOY_RUN_ID=$(gh run list --repo "$REPO" --workflow deploy.yaml \
+            --limit 1 --json databaseId -q '.[0].databaseId')
+          echo "Deploy run ID: $DEPLOY_RUN_ID"
+
+          echo "=== Waiting for Deploy to complete ==="
+          for i in $(seq 1 80); do
+            STATUS=$(gh run view "$DEPLOY_RUN_ID" --repo "$REPO" \
+              --json status,conclusion -q '.status + ":" + (.conclusion // "")')
+            echo "Deploy status ($i/80): $STATUS"
+            [[ "$STATUS" == "completed:"* ]] && break
+            sleep 30
+          done
+
+          CONCLUSION=$(gh run view "$DEPLOY_RUN_ID" --repo "$REPO" \
+            --json conclusion -q '.conclusion')
+          echo "Deploy conclusion: $CONCLUSION"
+          [ "$CONCLUSION" = "success" ] || exit 1
+
+  # ─────────────────────────────────────────────────────────────────
   # DESTROY PATH
   # ─────────────────────────────────────────────────────────────────
 
