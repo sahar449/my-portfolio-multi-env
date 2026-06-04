@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: ['feature/**']
+    branches: ['feature/**', dev]
     paths: ['services/**']
   pull_request:
     branches: [dev]
@@ -32,7 +32,7 @@ jobs:
     name: Build & Push to Dev ECR
     runs-on: ubuntu-latest
     needs: [test]
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && startsWith(github.ref_name, 'feature/')
     environment: dev
     steps:
       - uses: actions/checkout@v4
@@ -105,5 +105,6 @@ jobs:
               --base dev \
               --head "$HEAD" \
               --title "[$HEAD] → dev" \
-              --body "CI passed (tests + build + smoke tests). Ready for review."
+              --body "CI passed (tests + build + smoke tests). Ready for review." \
+            || echo "No commits between $HEAD and dev — already up to date, skipping PR"
           fi
