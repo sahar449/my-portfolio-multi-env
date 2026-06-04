@@ -97,6 +97,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HEAD: ${{ github.ref_name }}
         run: |
+          COMMITS=$(git log origin/dev..HEAD --oneline | wc -l)
+          if [ "$COMMITS" -eq 0 ]; then
+            echo "No commits ahead of dev — skipping PR"
+            exit 0
+          fi
+
           EXISTING=$(gh pr list --base dev --head "$HEAD" --state open --json number -q '.[0].number')
           if [ -n "$EXISTING" ]; then
             echo "PR #$EXISTING already open"
@@ -105,6 +111,5 @@ jobs:
               --base dev \
               --head "$HEAD" \
               --title "[$HEAD] → dev" \
-              --body "CI passed (tests + build + smoke tests). Ready for review." \
-            || echo "No commits between $HEAD and dev — already up to date, skipping PR"
+              --body "CI passed (tests + build + smoke tests). Ready for review."
           fi
