@@ -5,7 +5,7 @@ on:
     branches: [dev, 'feature/**']
     paths: ['services/**']
   pull_request:
-    branches: [dev, staging]
+    branches: [dev]
   workflow_dispatch:
 
 concurrency:
