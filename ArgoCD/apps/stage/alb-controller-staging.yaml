@@ -15,7 +15,7 @@ spec:
       values: |
         clusterName: "eksdemo-staging-cluster"
         region: us-west-2
-        vpcId: "vpc-07005c6c0652bc6a5"
+        vpcId: "vpc-0199081ab77e122ac"
         serviceAccount:
           create: true
           name: aws-load-balancer-controller
