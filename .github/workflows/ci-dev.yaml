@@ -53,7 +53,7 @@ jobs:
 
       - name: Lint
         working-directory: services/frontend
-        run: ruff check .
+        run: python -m ruff check .
 
       - name: Run unit tests
         working-directory: services/frontend
@@ -84,7 +84,7 @@ jobs:
 
       - name: Lint
         working-directory: services/backend
-        run: ruff check .
+        run: python -m ruff check .
 
       - name: Run unit tests
         working-directory: services/backend
