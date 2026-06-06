@@ -9,7 +9,7 @@ IMAGES_DIR = os.path.dirname(__file__)
 
 
 BUILD_INFO = {
-    "version": "5.0",
+    "version": "7.0",
     "environment": os.getenv("APP_ENV", "development"),
 }
 
