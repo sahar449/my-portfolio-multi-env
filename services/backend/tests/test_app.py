@@ -14,7 +14,7 @@ def client():
 def test_health(client):
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.get_json() == {"status": "ok", "version": "5.0"}
+    assert response.get_json() == {"status": "ok", "version": "6.0"}
 
 
 def test_health_db_not_configured(client):
