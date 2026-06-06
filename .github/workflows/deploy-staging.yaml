@@ -38,11 +38,14 @@ jobs:
 
       - name: Promote dev → staging ECR
         run: |
+          IMAGE_TAG=$(grep "tag:" ArgoCD/frontend/helm_chart/values.staging.yaml \
+            | head -1 | sed 's/.*tag: //;s/"//g')
+          echo "Promoting image tag: $IMAGE_TAG"
           for service in frontend backend; do
-            docker pull  "${{ env.ECR }}/${service}-dev:latest"
-            docker tag   "${{ env.ECR }}/${service}-dev:latest" "${{ env.ECR }}/${service}-staging:${{ github.sha }}"
-            docker tag   "${{ env.ECR }}/${service}-dev:latest" "${{ env.ECR }}/${service}-staging:latest"
-            docker push  "${{ env.ECR }}/${service}-staging:${{ github.sha }}"
+            docker pull  "${{ env.ECR }}/${service}-dev:${IMAGE_TAG}"
+            docker tag   "${{ env.ECR }}/${service}-dev:${IMAGE_TAG}" "${{ env.ECR }}/${service}-staging:${IMAGE_TAG}"
+            docker tag   "${{ env.ECR }}/${service}-dev:${IMAGE_TAG}" "${{ env.ECR }}/${service}-staging:latest"
+            docker push  "${{ env.ECR }}/${service}-staging:${IMAGE_TAG}"
             docker push  "${{ env.ECR }}/${service}-staging:latest"
           done
 
