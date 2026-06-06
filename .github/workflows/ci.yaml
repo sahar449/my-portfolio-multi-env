@@ -2,10 +2,10 @@ name: CI
 
 on:
   push:
-    branches: ['feature/**', dev]
+    branches: ['feature/**']
     paths: ['services/**']
   pull_request:
-    branches: [dev]
+    branches: [dev, staging]
   workflow_dispatch:
 
 concurrency:
@@ -32,7 +32,7 @@ jobs:
     name: Build & Push to Dev ECR
     runs-on: ubuntu-latest
     needs: [test]
-    if: github.event_name != 'pull_request' && startsWith(github.ref_name, 'feature/')
+    if: github.event_name == 'push' && startsWith(github.ref_name, 'feature/')
     environment: dev
     steps:
       - uses: actions/checkout@v4
@@ -89,7 +89,7 @@ jobs:
     name: Open PR feature → dev
     runs-on: ubuntu-latest
     needs: [build]
-    if: startsWith(github.ref_name, 'feature/')
+    if: github.event_name == 'push' && startsWith(github.ref_name, 'feature/')
     steps:
       - uses: actions/checkout@v4
       - name: Open PR to dev
@@ -114,9 +114,6 @@ jobs:
               --body "CI passed (tests + build + smoke tests). Ready for review."
           fi
 
-          # Push empty commit to trigger pull_request:synchronize event so
-          # status checks are reported on the PR. The push path filter (services/**)
-          # prevents this from re-triggering the push-based CI run.
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
           git commit --allow-empty -m "ci: trigger PR status checks"

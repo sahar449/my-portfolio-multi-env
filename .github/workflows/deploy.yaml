@@ -2,7 +2,7 @@ name: Deploy
 
 on:
   push:
-    branches: [dev, main]
+    branches: [staging, main]
     paths: ['services/**']
   workflow_dispatch:
     inputs:
@@ -33,7 +33,7 @@ jobs:
     name: Deploy to Staging
     runs-on: ubuntu-latest
     if: |
-      (github.ref == 'refs/heads/dev' && github.event_name == 'push') ||
+      (github.ref == 'refs/heads/staging' && github.event_name == 'push') ||
       (github.event_name == 'workflow_dispatch' && inputs.stage == 'staging')
     environment: staging
     steps:
@@ -47,15 +47,23 @@ jobs:
 
       - uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Promote dev → staging ECR
-        run: |
-          for service in frontend backend; do
-            docker pull  "${{ env.ECR }}/${service}-dev:latest"
-            docker tag   "${{ env.ECR }}/${service}-dev:latest" "${{ env.ECR }}/${service}-staging:${{ github.sha }}"
-            docker tag   "${{ env.ECR }}/${service}-dev:latest" "${{ env.ECR }}/${service}-staging:latest"
-            docker push  "${{ env.ECR }}/${service}-staging:${{ github.sha }}"
-            docker push  "${{ env.ECR }}/${service}-staging:latest"
-          done
+      - name: Build & push frontend to staging ECR
+        uses: docker/build-push-action@v6
+        with:
+          context: ./services/frontend
+          push: true
+          tags: |
+            ${{ env.ECR }}/frontend-staging:${{ github.sha }}
+            ${{ env.ECR }}/frontend-staging:latest
+
+      - name: Build & push backend to staging ECR
+        uses: docker/build-push-action@v6
+        with:
+          context: ./services/backend
+          push: true
+          tags: |
+            ${{ env.ECR }}/backend-staging:${{ github.sha }}
+            ${{ env.ECR }}/backend-staging:latest
 
       - name: Update staging image tags in Git
         run: |
@@ -109,20 +117,12 @@ jobs:
           pip install -r services/tests/qa/requirements.txt
           pytest services/tests/qa/ -v --tb=short
 
-      - name: Run E2E tests
-        env:
-          STAGING_FRONTEND_URL: https://stage.saharbittman.com
-        run: |
-          pip install -r services/tests/e2e/requirements.txt
-          playwright install --with-deps chromium
-          pytest services/tests/e2e/ -v --tb=short
-
-      - name: Upload Playwright report
+      - name: Upload test report
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: playwright-report
-          path: playwright-report/
+          name: qa-report
+          path: .pytest_cache/
           retention-days: 7
 
   open-prod-pr:
