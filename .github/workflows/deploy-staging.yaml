@@ -13,6 +13,7 @@ concurrency:
 permissions:
   id-token: write
   contents: write
+  contents: read
   pull-requests: write
 
 env:
@@ -66,12 +67,26 @@ jobs:
           git add ArgoCD/
           git diff --staged --quiet || git commit -m "cd: staging image ${{ github.sha }} [skip actions]"
           git push
+      - name: Promote dev → staging ECR
+        run: |
+          for service in frontend backend; do
+            docker pull  "${{ env.ECR }}/${service}-dev:latest"
+            docker tag   "${{ env.ECR }}/${service}-dev:latest" "${{ env.ECR }}/${service}-staging:${{ github.sha }}"
+            docker tag   "${{ env.ECR }}/${service}-dev:latest" "${{ env.ECR }}/${service}-staging:latest"
+            docker push  "${{ env.ECR }}/${service}-staging:${{ github.sha }}"
+            docker push  "${{ env.ECR }}/${service}-staging:latest"
+          done
 
       - name: Connect to prod cluster (ArgoCD host)
         run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name eksdemo-prod-cluster
 
       - name: Sync ArgoCD staging
         run: kubectl apply -f ArgoCD/bootstrap/root-app.yaml || true
+      - name: Force sync ArgoCD staging
+        run: |
+          kubectl rollout restart deployment -n default -l app.kubernetes.io/instance=frontend-staging || true
+          kubectl rollout restart deployment -n default -l app.kubernetes.io/instance=backend-staging  || true
+          kubectl apply -f ArgoCD/bootstrap/root-app.yaml || true
 
       - name: Wait for staging to be healthy
         run: |
@@ -119,6 +134,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: [qa-tests]
     if: needs.qa-tests.result == 'success'
+  open-prod-pr:
+    name: Open PR staging → main
+    runs-on: ubuntu-latest
+    needs: [deploy]
+    if: needs.deploy.result == 'success'
     steps:
       - uses: actions/checkout@v4
       - name: Create PR to main
@@ -134,4 +154,5 @@ jobs:
               --head staging \
               --title "Deploy to production — ${{ github.sha }}" \
               --body "Staging healthy and QA passed. Merge to deploy to production."
+              --body "Staging deployed and healthy. Merge to deploy to production."
           fi
