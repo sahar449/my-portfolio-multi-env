@@ -12,7 +12,7 @@ concurrency:
 
 permissions:
   id-token: write
-  contents: write
+  contents: read
   pull-requests: write
 
 env:
@@ -38,41 +38,25 @@ jobs:
 
       - name: Promote dev → staging ECR
         run: |
+          IMAGE_TAG=$(grep "tag:" ArgoCD/frontend/helm_chart/values.staging.yaml \
+            | head -1 | sed 's/.*tag: //;s/"//g')
+          echo "Promoting image tag: $IMAGE_TAG"
           for service in frontend backend; do
-            docker pull  "${{ env.ECR }}/${service}-dev:latest"
-            docker tag   "${{ env.ECR }}/${service}-dev:latest" "${{ env.ECR }}/${service}-staging:${{ github.sha }}"
-            docker tag   "${{ env.ECR }}/${service}-dev:latest" "${{ env.ECR }}/${service}-staging:latest"
-            docker push  "${{ env.ECR }}/${service}-staging:${{ github.sha }}"
+            docker pull  "${{ env.ECR }}/${service}-dev:${IMAGE_TAG}"
+            docker tag   "${{ env.ECR }}/${service}-dev:${IMAGE_TAG}" "${{ env.ECR }}/${service}-staging:${IMAGE_TAG}"
+            docker tag   "${{ env.ECR }}/${service}-dev:${IMAGE_TAG}" "${{ env.ECR }}/${service}-staging:latest"
+            docker push  "${{ env.ECR }}/${service}-staging:${IMAGE_TAG}"
             docker push  "${{ env.ECR }}/${service}-staging:latest"
           done
-
-      - name: Update staging image tags in Git
-        env:
-          GH_PAT: ${{ secrets.GH_PAT }}
-          FALLBACK_TOKEN: ${{ github.token }}
-        run: |
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git config user.name  "github-actions[bot]"
-          git pull --rebase
-          sed -i "s|tag:.*|tag: \"${{ github.sha }}\"|" ArgoCD/frontend/helm_chart/values.staging.yaml
-          sed -i "s|repository:.*|repository: \"${{ env.ECR }}/frontend-staging\"|" ArgoCD/frontend/helm_chart/values.staging.yaml
-          sed -i "s|tag:.*|tag: \"${{ github.sha }}\"|" ArgoCD/backend/helm_chart/values.staging.yaml
-          sed -i "s|repository:.*|repository: \"${{ env.ECR }}/backend-staging\"|" ArgoCD/backend/helm_chart/values.staging.yaml
-          git add ArgoCD/
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m "cd: staging image ${{ github.sha }} [skip actions]"
-            TOKEN="${GH_PAT:-$FALLBACK_TOKEN}"
-            git remote set-url origin "https://x-access-token:${TOKEN}@github.com/${{ github.repository }}.git"
-            git push origin staging
-          fi
 
       - name: Connect to prod cluster (ArgoCD host)
         run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name eksdemo-prod-cluster
 
-      - name: Sync ArgoCD staging
-        run: kubectl apply -f ArgoCD/bootstrap/root-app.yaml || true
+      - name: Force sync ArgoCD staging
+        run: |
+          kubectl rollout restart deployment -n default -l app.kubernetes.io/instance=frontend-staging || true
+          kubectl rollout restart deployment -n default -l app.kubernetes.io/instance=backend-staging  || true
+          kubectl apply -f ArgoCD/bootstrap/root-app.yaml || true
 
       - name: Wait for staging to be healthy
         run: |
@@ -96,7 +80,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Create PR to main
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           EXISTING=$(gh pr list --base main --head staging --state open --json number -q '.[0].number')
           if [ -n "$EXISTING" ]; then
