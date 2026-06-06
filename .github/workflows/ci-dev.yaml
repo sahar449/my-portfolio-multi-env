@@ -7,6 +7,11 @@ on:
   pull_request:
     branches: [dev]
   workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to run CI on"
+        required: false
+        default: "dev"
 
 concurrency:
   group: ci-dev-${{ github.ref }}
@@ -48,7 +53,7 @@ jobs:
 
       - name: Lint
         working-directory: services/frontend
-        run: ruff check .
+        run: python -m ruff check .
 
       - name: Run unit tests
         working-directory: services/frontend
@@ -79,7 +84,7 @@ jobs:
 
       - name: Lint
         working-directory: services/backend
-        run: ruff check .
+        run: python -m ruff check .
 
       - name: Run unit tests
         working-directory: services/backend
