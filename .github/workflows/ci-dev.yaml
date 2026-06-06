@@ -1,15 +1,15 @@
-name: CI
+name: CI Dev
 
 on:
   push:
-    branches: ['feature/**', dev]
+    branches: ['feature/**']
     paths: ['services/**']
   pull_request:
     branches: [dev]
   workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-dev-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -23,16 +23,73 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  test:
-    name: Run Tests
-    uses: ./.github/workflows/test.yaml
-    secrets: inherit
+  test-frontend:
+    name: Test Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: ./services/frontend
+          scanners: vuln,secret,config
+          format: table
+          severity: CRITICAL,HIGH,MEDIUM,LOW
+          exit-code: '0'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        working-directory: services/frontend
+        run: pip install -r requirements.txt
+
+      - name: Lint
+        working-directory: services/frontend
+        run: ruff check .
+
+      - name: Run unit tests
+        working-directory: services/frontend
+        run: pytest tests/ -v
+
+  test-backend:
+    name: Test Backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: ./services/backend
+          scanners: vuln,secret,config
+          format: table
+          severity: CRITICAL,HIGH,MEDIUM,LOW
+          exit-code: '0'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        working-directory: services/backend
+        run: pip install -r requirements.txt
+
+      - name: Lint
+        working-directory: services/backend
+        run: ruff check .
+
+      - name: Run unit tests
+        working-directory: services/backend
+        run: pytest tests/ -v
 
   build:
     name: Build & Push to Dev ECR
     runs-on: ubuntu-latest
-    needs: [test]
-    if: github.event_name != 'pull_request' && startsWith(github.ref_name, 'feature/')
+    needs: [test-frontend, test-backend]
+    if: github.event_name == 'push' && startsWith(github.ref_name, 'feature/')
     environment: dev
     steps:
       - uses: actions/checkout@v4
@@ -89,14 +146,18 @@ jobs:
     name: Open PR feature → dev
     runs-on: ubuntu-latest
     needs: [build]
-    if: startsWith(github.ref_name, 'feature/')
+    if: github.event_name == 'push' && startsWith(github.ref_name, 'feature/')
     steps:
       - uses: actions/checkout@v4
       - name: Open PR to dev
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
+          FALLBACK_TOKEN: ${{ github.token }}
           HEAD: ${{ github.ref_name }}
         run: |
+          GH_TOKEN="${GH_TOKEN:-$FALLBACK_TOKEN}"
+          export GH_TOKEN
+
           AHEAD=$(gh api repos/${{ github.repository }}/compare/dev...$HEAD --jq '.ahead_by')
           if [ "$AHEAD" -eq 0 ]; then
             echo "No commits ahead of dev — skipping PR"

@@ -1,0 +1,137 @@
+name: Deploy Staging
+
+on:
+  push:
+    branches: [staging]
+    paths: ['services/**']
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: write
+  pull-requests: write
+
+env:
+  AWS_REGION: us-west-2
+  ECR: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.us-west-2.amazonaws.com
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  deploy:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-deploy-staging
+
+      - uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & push frontend to staging ECR
+        uses: docker/build-push-action@v6
+        with:
+          context: ./services/frontend
+          push: true
+          tags: |
+            ${{ env.ECR }}/frontend-staging:${{ github.sha }}
+            ${{ env.ECR }}/frontend-staging:latest
+
+      - name: Build & push backend to staging ECR
+        uses: docker/build-push-action@v6
+        with:
+          context: ./services/backend
+          push: true
+          tags: |
+            ${{ env.ECR }}/backend-staging:${{ github.sha }}
+            ${{ env.ECR }}/backend-staging:latest
+
+      - name: Update staging image tags in Git
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name  "github-actions[bot]"
+          git pull --rebase
+          sed -i "s|tag:.*|tag: \"${{ github.sha }}\"|" ArgoCD/frontend/helm_chart/values.staging.yaml
+          sed -i "s|repository:.*|repository: \"${{ env.ECR }}/frontend-staging\"|" ArgoCD/frontend/helm_chart/values.staging.yaml
+          sed -i "s|tag:.*|tag: \"${{ github.sha }}\"|" ArgoCD/backend/helm_chart/values.staging.yaml
+          sed -i "s|repository:.*|repository: \"${{ env.ECR }}/backend-staging\"|" ArgoCD/backend/helm_chart/values.staging.yaml
+          git add ArgoCD/
+          git diff --staged --quiet || git commit -m "cd: staging image ${{ github.sha }} [skip actions]"
+          git push
+
+      - name: Connect to prod cluster (ArgoCD host)
+        run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name eksdemo-prod-cluster
+
+      - name: Sync ArgoCD staging
+        run: kubectl apply -f ArgoCD/bootstrap/root-app.yaml || true
+
+      - name: Wait for staging to be healthy
+        run: |
+          for i in $(seq 1 40); do
+            F=$(kubectl get application frontend-staging -n argocd \
+              -o jsonpath='{.status.health.status}' 2>/dev/null || echo "NotFound")
+            B=$(kubectl get application backend-staging -n argocd \
+              -o jsonpath='{.status.health.status}' 2>/dev/null || echo "NotFound")
+            echo "Attempt $i — frontend: $F, backend: $B"
+            [ "$F" = "Healthy" ] && [ "$B" = "Healthy" ] && break
+            [ "$i" -eq 40 ] && exit 1
+            sleep 15
+          done
+
+  qa-tests:
+    name: QA Tests (live staging)
+    runs-on: ubuntu-latest
+    needs: [deploy]
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run QA tests against live staging
+        env:
+          STAGING_FRONTEND_URL: https://stage.saharbittman.com
+          STAGING_BACKEND_URL: https://stage.saharbittman.com
+        run: |
+          pip install -r services/tests/qa/requirements.txt
+          pytest services/tests/qa/ -v --tb=short
+
+      - name: Upload test report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-report-${{ github.sha }}
+          path: .pytest_cache/
+          retention-days: 7
+
+  open-prod-pr:
+    name: Open PR staging → main
+    runs-on: ubuntu-latest
+    needs: [qa-tests]
+    if: needs.qa-tests.result == 'success'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create PR to main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          EXISTING=$(gh pr list --base main --head staging --state open --json number -q '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            echo "PR #$EXISTING already open"
+          else
+            gh pr create \
+              --base main \
+              --head staging \
+              --title "Deploy to production — ${{ github.sha }}" \
+              --body "Staging healthy and QA passed. Merge to deploy to production."
+          fi
