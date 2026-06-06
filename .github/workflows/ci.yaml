@@ -46,6 +46,10 @@ jobs:
         working-directory: services/frontend
         run: pip install -r requirements.txt
 
+      - name: Lint
+        working-directory: services/frontend
+        run: ruff check .
+
       - name: Run unit tests
         working-directory: services/frontend
         run: pytest tests/ -v
@@ -72,6 +76,10 @@ jobs:
       - name: Install dependencies
         working-directory: services/backend
         run: pip install -r requirements.txt
+
+      - name: Lint
+        working-directory: services/backend
+        run: ruff check .
 
       - name: Run unit tests
         working-directory: services/backend
