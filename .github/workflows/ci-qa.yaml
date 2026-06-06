@@ -126,36 +126,13 @@ jobs:
       github.event_name == 'workflow_run' &&
       github.event.workflow_run.conclusion == 'success'
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: staging
-          token: ${{ secrets.GH_PAT || github.token }}
-
-      - name: Stamp ArgoCD values with image SHA
-        env:
-          IMAGE_SHA: ${{ github.event.workflow_run.head_sha }}
-          GH_PAT: ${{ secrets.GH_PAT }}
-          FALLBACK_TOKEN: ${{ github.token }}
-        run: |
-          sed -i "s|tag:.*|tag: \"${IMAGE_SHA}\"|" ArgoCD/frontend/helm_chart/values.staging.yaml
-          sed -i "s|tag:.*|tag: \"${IMAGE_SHA}\"|" ArgoCD/backend/helm_chart/values.staging.yaml
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git config user.name  "github-actions[bot]"
-          git add ArgoCD/
-          if git diff --staged --quiet; then
-            echo "No changes to stamp"
-          else
-            TOKEN="${GH_PAT:-$FALLBACK_TOKEN}"
-            git remote set-url origin "https://x-access-token:${TOKEN}@github.com/${{ github.repository }}.git"
-            git commit -m "cd: staging image tag → ${IMAGE_SHA} [skip actions]"
-            git push origin staging
-          fi
-
       - name: Trigger deploy-staging workflow
         env:
           GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
+          IMAGE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           gh workflow run deploy-staging.yaml \
             --repo ${{ github.repository }} \
-            --ref staging
-          echo "Staging deploy triggered for image ${{ github.event.workflow_run.head_sha }}"
+            --ref staging \
+            --field image_sha="${IMAGE_SHA}"
+          echo "Staging deploy triggered for image ${IMAGE_SHA}"
