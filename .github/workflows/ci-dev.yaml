@@ -92,7 +92,7 @@ jobs:
     name: Build & Push to Dev ECR
     runs-on: ubuntu-latest
     needs: [test-frontend, test-backend]
-    if: github.event_name == 'push' && startsWith(github.ref_name, 'feature/')
+    if: startsWith(github.ref_name, 'feature/')
     environment: dev
     steps:
       - uses: actions/checkout@v4
