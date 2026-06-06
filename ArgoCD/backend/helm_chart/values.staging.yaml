@@ -4,7 +4,7 @@ app:
   replicas: 1
   image:
     repository: "634647866665.dkr.ecr.us-west-2.amazonaws.com/backend-staging"
-    tag: "9843e8a8bc3cef855baa6dc8bb270f0d1ea314d8"
+    tag: "3b09ce7fa99cdb2f679c7c4a940c7330135ee674"
     pullPolicy: Always
   securityContext:
     runAsUser: 1000
@@ -31,8 +31,7 @@ secrets:
   providerClassName: rds-secret-provider
   mountPath: /mnt/rds-secret
   k8sSecretName: rds-credentials
-  rdsSecretName: rds-creds-staging
-  irsaRoleArn: "arn:aws:iam::634647866665:role/eksdemo-staging-flask-app-secrets-role"
+  accountNumber: "634647866665"
 resources:
   requests:
     memory: 64Mi

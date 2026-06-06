@@ -4,7 +4,7 @@ app:
   replicas: 2
   image:
     repository: "634647866665.dkr.ecr.us-west-2.amazonaws.com/frontend-prod"
-    tag: "e5de31158b2548a839065ccc7760aa6d6745253c"
+    tag: fc4bb2139f7ca537c85475a793a802ba4322306f
     pullPolicy: Always
   securityContext:
     runAsUser: 1000
@@ -44,6 +44,7 @@ ingress:
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443},{"HTTP":80}]'
     alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-west-2:634647866665:certificate/58107c20-5d09-4c61-9594-f28c981d8b36
     alb.ingress.kubernetes.io/healthcheck-path: /health
     alb.ingress.kubernetes.io/healthcheck-interval-seconds: '15'
     alb.ingress.kubernetes.io/healthy-threshold-count: '2'
@@ -52,9 +53,9 @@ ingress:
     alb.ingress.kubernetes.io/load-balancer-name: portfolio-alb
     alb.ingress.kubernetes.io/load-balancer-attributes: deletion_protection.enabled=false
     alb.ingress.kubernetes.io/target-group-attributes: deregistration_delay.timeout_seconds=10
-    external-dns.alpha.kubernetes.io/hostname: prod.saharbittman.com
+    external-dns.alpha.kubernetes.io/hostname: www.saharbittman.com
   hosts:
-    - host: prod.saharbittman.com
+    - host: www.saharbittman.com
       paths:
         - path: /api/backend
           pathType: Prefix

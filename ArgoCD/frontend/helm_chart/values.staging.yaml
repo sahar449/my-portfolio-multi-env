@@ -4,7 +4,7 @@ app:
   replicas: 1
   image:
     repository: "634647866665.dkr.ecr.us-west-2.amazonaws.com/frontend-staging"
-    tag: "9843e8a8bc3cef855baa6dc8bb270f0d1ea314d8"
+    tag: "3b09ce7fa99cdb2f679c7c4a940c7330135ee674"
     pullPolicy: Always
   securityContext:
     runAsUser: 1000
@@ -42,6 +42,7 @@ ingress:
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443},{"HTTP":80}]'
     alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-west-2:634647866665:certificate/58107c20-5d09-4c61-9594-f28c981d8b36
     alb.ingress.kubernetes.io/healthcheck-path: /health
     alb.ingress.kubernetes.io/healthcheck-interval-seconds: '15'
     alb.ingress.kubernetes.io/healthy-threshold-count: '2'
@@ -50,9 +51,9 @@ ingress:
     alb.ingress.kubernetes.io/load-balancer-name: portfolio-staging-alb
     alb.ingress.kubernetes.io/load-balancer-attributes: deletion_protection.enabled=false
     alb.ingress.kubernetes.io/target-group-attributes: deregistration_delay.timeout_seconds=10
-    external-dns.alpha.kubernetes.io/hostname: stage.saharbittman.com
+    external-dns.alpha.kubernetes.io/hostname: staging.saharbittman.com
   hosts:
-    - host: stage.saharbittman.com
+    - host: staging.saharbittman.com
       paths:
         - path: /api/backend
           pathType: Prefix
