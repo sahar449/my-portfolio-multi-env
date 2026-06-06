@@ -50,6 +50,25 @@ jobs:
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
           FALLBACK_TOKEN: ${{ github.token }}
+      - name: Build & push frontend to staging ECR
+        uses: docker/build-push-action@v6
+        with:
+          context: ./services/frontend
+          push: true
+          tags: |
+            ${{ env.ECR }}/frontend-staging:${{ github.sha }}
+            ${{ env.ECR }}/frontend-staging:latest
+
+      - name: Build & push backend to staging ECR
+        uses: docker/build-push-action@v6
+        with:
+          context: ./services/backend
+          push: true
+          tags: |
+            ${{ env.ECR }}/backend-staging:${{ github.sha }}
+            ${{ env.ECR }}/backend-staging:latest
+
+      - name: Update staging image tags in Git
         run: |
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name  "github-actions[bot]"
@@ -69,6 +88,8 @@ jobs:
             git remote set-url origin "https://x-access-token:${TOKEN}@github.com/${{ github.repository }}.git"
             git push origin staging
           fi
+          git diff --staged --quiet || git commit -m "cd: staging image ${{ github.sha }} [skip actions]"
+          git push
 
       - name: Connect to prod cluster (ArgoCD host)
         run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name eksdemo-prod-cluster
@@ -127,6 +148,7 @@ jobs:
       - name: Create PR to main
         env:
           GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           EXISTING=$(gh pr list --base main --head staging --state open --json number -q '.[0].number')
           if [ -n "$EXISTING" ]; then
