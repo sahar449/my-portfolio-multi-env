@@ -15,7 +15,13 @@ def test_health(client):
     assert response.status_code == 200
     data = response.get_json()
     assert data["status"] == "ok"
-    assert data["version"] == "5.0"
+    assert data["version"] == "8.0"
+    assert "environment" in data
+
+
+def test_health_has_required_fields(client):
+    data = client.get("/health").get_json()
+    assert {"status", "version", "environment"} <= data.keys()
 
 
 def test_index(client):

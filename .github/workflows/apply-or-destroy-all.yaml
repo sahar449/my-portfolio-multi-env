@@ -70,10 +70,75 @@ jobs:
             aws dynamodb wait table-exists --table-name ${{ env.TF_LOCK_TABLE }}
           fi
 
+  lint:
+    name: Lint & Validate Terraform
+    runs-on: ubuntu-latest
+    needs: [bootstrap]
+    if: ${{ inputs.action == 'apply' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.50.3
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: github-actions-lint-all
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive infra/
+
+      - name: Trivy IaC Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: config
+          scan-ref: infra/
+          scanners: config,secret
+          format: table
+          severity: CRITICAL,HIGH,MEDIUM,LOW
+          exit-code: '0'
+
+      - name: Validate Dev
+        working-directory: infra/envs/dev
+        run: terraform init -upgrade && terraform validate
+
+      - name: TFLint Dev
+        working-directory: infra/envs/dev
+        run: |
+          tflint --init --config ../../.tflint.hcl || true
+          tflint --minimum-failure-severity=error --config ../../.tflint.hcl || true
+
+      - name: Validate Staging
+        working-directory: infra/envs/staging
+        run: terraform init -upgrade && terraform validate
+
+      - name: TFLint Staging
+        working-directory: infra/envs/staging
+        run: |
+          tflint --init --config ../../.tflint.hcl || true
+          tflint --minimum-failure-severity=error --config ../../.tflint.hcl || true
+
+      - name: Validate Production
+        working-directory: infra/envs/production
+        run: terraform init -upgrade && terraform validate
+
+      - name: TFLint Production
+        working-directory: infra/envs/production
+        run: |
+          tflint --init --config ../../.tflint.hcl || true
+          tflint --minimum-failure-severity=error --config ../../.tflint.hcl || true
+
   apply-dev:
     name: Apply Dev
     runs-on: ubuntu-latest
-    needs: [bootstrap]
+    needs: [lint]
     if: ${{ inputs.action == 'apply' }}
     environment: dev
     steps:
@@ -96,7 +161,7 @@ jobs:
   apply-staging:
     name: Apply Staging
     runs-on: ubuntu-latest
-    needs: [bootstrap]
+    needs: [lint]
     if: ${{ inputs.action == 'apply' }}
     environment: staging
     steps:
@@ -131,7 +196,7 @@ jobs:
   apply-prod:
     name: Apply Prod
     runs-on: ubuntu-latest
-    needs: [bootstrap]
+    needs: [lint]
     if: ${{ inputs.action == 'apply' }}
     environment: production
     steps:
@@ -163,16 +228,20 @@ jobs:
             --access-scope type=cluster \
             --region ${{ env.AWS_REGION }} || true
 
-  trigger-cd:
-    name: Trigger CD Pipeline
+  trigger-deploy:
+    name: Trigger Staging Deploy
     runs-on: ubuntu-latest
     needs: [apply-dev, apply-staging, apply-prod]
     if: ${{ inputs.action == 'apply' }}
     steps:
-      - name: Trigger CD Staging
+      - name: Trigger staging deploy
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run staging-cd.yaml --repo ${{ github.repository }} --ref staging
+        run: |
+          gh workflow run deploy.yaml \
+            --repo ${{ github.repository }} \
+            --ref staging \
+            --field stage=staging
 
   # ─────────────────────────────────────────────────────────────────
   # DESTROY PATH
