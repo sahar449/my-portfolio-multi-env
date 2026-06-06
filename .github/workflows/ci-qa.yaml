@@ -1,6 +1,9 @@
 name: CI QA
 
 on:
+  push:
+    branches: [dev]
+    paths: ['services/**']
   workflow_run:
     workflows: ["CI Dev"]
     types: [completed]
@@ -8,6 +11,11 @@ on:
   pull_request:
     branches: [staging]
   workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to run tests on"
+        required: false
+        default: "dev"
 
 concurrency:
   group: ci-qa-${{ github.event.workflow_run.head_branch || github.ref }}
@@ -15,8 +23,9 @@ concurrency:
 
 permissions:
   id-token: write
-  contents: write
+  contents: read
   pull-requests: write
+  actions: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -27,6 +36,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - uses: actions/setup-python@v5
         with:
@@ -49,6 +60,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - uses: actions/setup-python@v5
         with:
@@ -110,21 +123,41 @@ jobs:
         if: always()
         run: docker rm -f frontend backend || true
 
+  deploy-to-staging:
+    name: Trigger Staging Deploy
+    runs-on: ubuntu-latest
+    needs: [integration-tests]
+    if: >
+      needs.integration-tests.result == 'success' &&
+      (
+        (github.event_name == 'push' && github.ref == 'refs/heads/dev') ||
+        github.event_name == 'workflow_dispatch'
+      )
+    steps:
+      - name: Trigger deploy-staging workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run deploy-staging.yaml \
+            --repo ${{ github.repository }} \
+            --ref staging
+          echo "Staging deploy triggered."
+
   open-staging-pr:
     name: Open PR feature/qa → staging
     runs-on: ubuntu-latest
     needs: [integration-tests]
     if: >
-      (github.event_name == 'workflow_run' &&
-       github.event.workflow_run.conclusion == 'success') ||
-      github.event_name == 'workflow_dispatch'
+      needs.integration-tests.result == 'success' &&
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success'
     steps:
       - uses: actions/checkout@v4
       - name: Open PR to staging
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
           FALLBACK_TOKEN: ${{ github.token }}
-          HEAD: ${{ github.event.workflow_run.head_branch || github.ref_name }}
+          HEAD: ${{ github.event.workflow_run.head_branch }}
         run: |
           GH_TOKEN="${GH_TOKEN:-$FALLBACK_TOKEN}"
           export GH_TOKEN

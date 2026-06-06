@@ -7,6 +7,11 @@ on:
   pull_request:
     branches: [dev]
   workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to run CI on"
+        required: false
+        default: "dev"
 
 concurrency:
   group: ci-dev-${{ github.ref }}
