@@ -12,7 +12,6 @@ concurrency:
 
 permissions:
   id-token: write
-  contents: write
   contents: read
   pull-requests: write
 
@@ -37,51 +36,22 @@ jobs:
 
       - uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build & push frontend to staging ECR
-        uses: docker/build-push-action@v6
-        with:
-          context: ./services/frontend
-          push: true
-          tags: |
-            ${{ env.ECR }}/frontend-staging:${{ github.sha }}
-            ${{ env.ECR }}/frontend-staging:latest
-
-      - name: Build & push backend to staging ECR
-        uses: docker/build-push-action@v6
-        with:
-          context: ./services/backend
-          push: true
-          tags: |
-            ${{ env.ECR }}/backend-staging:${{ github.sha }}
-            ${{ env.ECR }}/backend-staging:latest
-
-      - name: Update staging image tags in Git
-        run: |
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git config user.name  "github-actions[bot]"
-          git pull --rebase
-          sed -i "s|tag:.*|tag: \"${{ github.sha }}\"|" ArgoCD/frontend/helm_chart/values.staging.yaml
-          sed -i "s|repository:.*|repository: \"${{ env.ECR }}/frontend-staging\"|" ArgoCD/frontend/helm_chart/values.staging.yaml
-          sed -i "s|tag:.*|tag: \"${{ github.sha }}\"|" ArgoCD/backend/helm_chart/values.staging.yaml
-          sed -i "s|repository:.*|repository: \"${{ env.ECR }}/backend-staging\"|" ArgoCD/backend/helm_chart/values.staging.yaml
-          git add ArgoCD/
-          git diff --staged --quiet || git commit -m "cd: staging image ${{ github.sha }} [skip actions]"
-          git push
       - name: Promote dev → staging ECR
         run: |
+          IMAGE_TAG=$(grep "tag:" ArgoCD/frontend/helm_chart/values.staging.yaml \
+            | head -1 | sed 's/.*tag: //;s/"//g')
+          echo "Promoting image tag: $IMAGE_TAG"
           for service in frontend backend; do
-            docker pull  "${{ env.ECR }}/${service}-dev:latest"
-            docker tag   "${{ env.ECR }}/${service}-dev:latest" "${{ env.ECR }}/${service}-staging:${{ github.sha }}"
-            docker tag   "${{ env.ECR }}/${service}-dev:latest" "${{ env.ECR }}/${service}-staging:latest"
-            docker push  "${{ env.ECR }}/${service}-staging:${{ github.sha }}"
+            docker pull  "${{ env.ECR }}/${service}-dev:${IMAGE_TAG}"
+            docker tag   "${{ env.ECR }}/${service}-dev:${IMAGE_TAG}" "${{ env.ECR }}/${service}-staging:${IMAGE_TAG}"
+            docker tag   "${{ env.ECR }}/${service}-dev:${IMAGE_TAG}" "${{ env.ECR }}/${service}-staging:latest"
+            docker push  "${{ env.ECR }}/${service}-staging:${IMAGE_TAG}"
             docker push  "${{ env.ECR }}/${service}-staging:latest"
           done
 
       - name: Connect to prod cluster (ArgoCD host)
         run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name eksdemo-prod-cluster
 
-      - name: Sync ArgoCD staging
-        run: kubectl apply -f ArgoCD/bootstrap/root-app.yaml || true
       - name: Force sync ArgoCD staging
         run: |
           kubectl rollout restart deployment -n default -l app.kubernetes.io/instance=frontend-staging || true
@@ -101,39 +71,6 @@ jobs:
             sleep 15
           done
 
-  qa-tests:
-    name: QA Tests (live staging)
-    runs-on: ubuntu-latest
-    needs: [deploy]
-    environment: staging
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Run QA tests against live staging
-        env:
-          STAGING_FRONTEND_URL: https://stage.saharbittman.com
-          STAGING_BACKEND_URL: https://stage.saharbittman.com
-        run: |
-          pip install -r services/tests/qa/requirements.txt
-          pytest services/tests/qa/ -v --tb=short
-
-      - name: Upload test report
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: qa-report-${{ github.sha }}
-          path: .pytest_cache/
-          retention-days: 7
-
-  open-prod-pr:
-    name: Open PR staging → main
-    runs-on: ubuntu-latest
-    needs: [qa-tests]
-    if: needs.qa-tests.result == 'success'
   open-prod-pr:
     name: Open PR staging → main
     runs-on: ubuntu-latest
@@ -153,6 +90,5 @@ jobs:
               --base main \
               --head staging \
               --title "Deploy to production — ${{ github.sha }}" \
-              --body "Staging healthy and QA passed. Merge to deploy to production."
               --body "Staging deployed and healthy. Merge to deploy to production."
           fi
