@@ -176,5 +176,7 @@ jobs:
 
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
+          git fetch origin "$HEAD"
+          git reset --soft origin/"$HEAD"
           git commit --allow-empty -m "ci: trigger PR status checks"
           git push origin "$HEAD"
