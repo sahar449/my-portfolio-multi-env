@@ -22,7 +22,7 @@ jobs:
     continue-on-error: true
     strategy:
       matrix:
-        branch: [staging, main]
+        branch: [staging]
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
