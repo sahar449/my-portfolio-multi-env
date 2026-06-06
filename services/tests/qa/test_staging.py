@@ -14,6 +14,11 @@ def test_frontend_health():
     assert r.json()["status"] == "ok"
 
 
+def test_frontend_version():
+    r = requests.get(f"{FRONTEND_URL}/health", timeout=10)
+    assert r.json()["version"] == "7.0"
+
+
 def test_frontend_index():
     r = requests.get(f"{FRONTEND_URL}/", timeout=10)
     assert r.status_code == 200
