@@ -11,7 +11,7 @@ BACKEND_URL = os.environ["STAGING_BACKEND_URL"].rstrip("/")
 def test_frontend_health():
     r = requests.get(f"{FRONTEND_URL}/health", timeout=10)
     assert r.status_code == 200
-    assert r.json() == {"status": "ok"}
+    assert r.json()["status"] == "ok"
 
 
 def test_frontend_index():

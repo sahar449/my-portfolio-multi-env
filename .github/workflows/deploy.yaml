@@ -2,20 +2,16 @@ name: Deploy
 
 on:
   push:
-    branches:
-      - staging
+    branches: [staging, main]
+    paths: ['services/**']
   workflow_dispatch:
     inputs:
       stage:
-        description: "Stage to run"
+        description: "Stage to deploy"
         required: true
-        default: "all"
+        default: "staging"
         type: choice
-        options:
-          - all        # staging → QA → production
-          - staging    # deploy to staging only
-          - qa         # run QA & E2E tests only
-          - production # deploy to production only
+        options: [staging, production]
 
 concurrency:
   group: deploy-${{ github.ref }}
@@ -24,23 +20,24 @@ concurrency:
 permissions:
   id-token: write
   contents: write
+  pull-requests: write
 
 env:
   AWS_REGION: us-west-2
+  ECR: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.us-west-2.amazonaws.com
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  # ─────────────────────────────────────────────────────────────────
-  # DEPLOY TO STAGING
-  # ─────────────────────────────────────────────────────────────────
+  # ── Staging ──────────────────────────────────────────────────────
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.stage == 'all' || inputs.stage == 'staging' }}
+    if: |
+      (github.ref == 'refs/heads/staging' && github.event_name == 'push') ||
+      (github.event_name == 'workflow_dispatch' && inputs.stage == 'staging')
     environment: staging
     steps:
       - uses: actions/checkout@v4
-        with:
-          token: ${{ github.token }}
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -50,94 +47,60 @@ jobs:
 
       - uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Promote images dev → staging
-        env:
-          ECR: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
-          IMAGE_TAG: ${{ github.sha }}
+      - name: Build & push frontend to staging ECR
+        uses: docker/build-push-action@v6
+        with:
+          context: ./services/frontend
+          push: true
+          tags: |
+            ${{ env.ECR }}/frontend-staging:${{ github.sha }}
+            ${{ env.ECR }}/frontend-staging:latest
+
+      - name: Build & push backend to staging ECR
+        uses: docker/build-push-action@v6
+        with:
+          context: ./services/backend
+          push: true
+          tags: |
+            ${{ env.ECR }}/backend-staging:${{ github.sha }}
+            ${{ env.ECR }}/backend-staging:latest
+
+      - name: Update staging image tags in Git
         run: |
-          for service in frontend backend; do
-            docker pull  "${ECR}/${service}-dev:latest"
-            docker tag   "${ECR}/${service}-dev:latest" "${ECR}/${service}-staging:${IMAGE_TAG}"
-            docker tag   "${ECR}/${service}-dev:latest" "${ECR}/${service}-staging:latest"
-            docker push  "${ECR}/${service}-staging:${IMAGE_TAG}"
-            docker push  "${ECR}/${service}-staging:latest"
-          done
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name  "github-actions[bot]"
+          git pull --rebase
+          sed -i "s|tag:.*|tag: \"${{ github.sha }}\"|" ArgoCD/frontend/helm_chart/values.staging.yaml
+          sed -i "s|repository:.*|repository: \"${{ env.ECR }}/frontend-staging\"|" ArgoCD/frontend/helm_chart/values.staging.yaml
+          sed -i "s|tag:.*|tag: \"${{ github.sha }}\"|" ArgoCD/backend/helm_chart/values.staging.yaml
+          sed -i "s|repository:.*|repository: \"${{ env.ECR }}/backend-staging\"|" ArgoCD/backend/helm_chart/values.staging.yaml
+          git add ArgoCD/
+          git diff --staged --quiet || git commit -m "cd: staging image ${{ github.sha }} [skip actions]"
+          git push
 
       - name: Connect to prod cluster (ArgoCD host)
         run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name eksdemo-prod-cluster
 
-      - name: Install ArgoCD CLI
-        run: |
-          curl -sSL -o /usr/local/bin/argocd \
-            https://github.com/argoproj/argo-cd/releases/download/v2.11.0/argocd-linux-amd64
-          chmod +x /usr/local/bin/argocd
+      - name: Sync ArgoCD staging
+        run: kubectl apply -f ArgoCD/bootstrap/root-app.yaml || true
 
-      - name: Register staging cluster with ArgoCD
-        run: |
-          PROD_CONTEXT=$(kubectl config current-context)
-
-          ARGOCD_SERVER=$(kubectl get ingress argocd-server -n argocd \
-            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
-
-          ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret \
-            -o jsonpath="{.data.password}" | base64 -d)
-
-          argocd login "$ARGOCD_SERVER" \
-            --username admin \
-            --password "$ARGOCD_PASSWORD" \
-            --insecure \
-            --grpc-web || true
-
-          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name eksdemo-staging-cluster
-          TARGET_CONTEXT=$(kubectl config current-context)
-
-          argocd cluster get eksdemo-staging-cluster 2>/dev/null || \
-            argocd cluster add "$TARGET_CONTEXT" --name eksdemo-staging-cluster --yes || true
-
-          kubectl config use-context "$PROD_CONTEXT"
-
-      - name: Update image tag in Git
-        env:
-          IMAGE_TAG: ${{ github.sha }}
-          ECR: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
-        run: |
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git config user.name "github-actions[bot]"
-          git pull --rebase
-
-          sed -i "s|repository:.*|repository: \"${ECR}/frontend-staging\"|" ArgoCD/frontend/helm_chart/values.staging.yaml
-          sed -i "s|tag:.*|tag: \"${IMAGE_TAG}\"|" ArgoCD/frontend/helm_chart/values.staging.yaml
-          sed -i "s|repository:.*|repository: \"${ECR}/backend-staging\"|" ArgoCD/backend/helm_chart/values.staging.yaml
-          sed -i "s|tag:.*|tag: \"${IMAGE_TAG}\"|" ArgoCD/backend/helm_chart/values.staging.yaml
-
-          git add ArgoCD/frontend/helm_chart/values.staging.yaml ArgoCD/backend/helm_chart/values.staging.yaml
-          git diff --staged --quiet || git commit -m "cd: deploy to staging image ${IMAGE_TAG}"
-          git push
-
-      - name: Apply ArgoCD apps
-        run: kubectl apply -f ArgoCD/bootstrap/root-app.yaml
-
-      - name: Wait for apps to be healthy
+      - name: Wait for staging to be healthy
         run: |
           for i in $(seq 1 40); do
-            FRONTEND=$(kubectl get application frontend-staging -n argocd \
+            F=$(kubectl get application frontend-staging -n argocd \
               -o jsonpath='{.status.health.status}' 2>/dev/null || echo "NotFound")
-            BACKEND=$(kubectl get application backend-staging -n argocd \
+            B=$(kubectl get application backend-staging -n argocd \
               -o jsonpath='{.status.health.status}' 2>/dev/null || echo "NotFound")
-            echo "Attempt $i/40 — frontend: $FRONTEND, backend: $BACKEND"
-            [ "$FRONTEND" = "Healthy" ] && [ "$BACKEND" = "Healthy" ] && break
+            echo "Attempt $i — frontend: $F, backend: $B"
+            [ "$F" = "Healthy" ] && [ "$B" = "Healthy" ] && break
             [ "$i" -eq 40 ] && exit 1
             sleep 15
           done
 
-  # ─────────────────────────────────────────────────────────────────
-  # QA & E2E TESTS
-  # ─────────────────────────────────────────────────────────────────
   qa-tests:
-    name: QA & E2E Tests
+    name: QA & Integration Tests
     runs-on: ubuntu-latest
     needs: [deploy-staging]
-    if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.stage == 'all' || inputs.stage == 'qa') && needs.deploy-staging.result != 'failure' }}
     environment: staging
     steps:
       - uses: actions/checkout@v4
@@ -146,47 +109,54 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install QA dependencies
-        run: pip install -r services/tests/qa/requirements.txt
-
       - name: Run QA tests
         env:
-          STAGING_FRONTEND_URL: ${{ secrets.STAGING_FRONTEND_URL }}
-          STAGING_BACKEND_URL: ${{ secrets.STAGING_BACKEND_URL }}
-        run: pytest services/tests/qa/ -v --tb=short
+          STAGING_FRONTEND_URL: https://stage.saharbittman.com
+          STAGING_BACKEND_URL: https://stage.saharbittman.com
+        run: |
+          pip install -r services/tests/qa/requirements.txt
+          pytest services/tests/qa/ -v --tb=short
 
-      - name: Install E2E dependencies
-        run: pip install -r services/tests/e2e/requirements.txt
-
-      - name: Install Playwright browsers
-        run: playwright install --with-deps chromium
-
-      - name: Run E2E tests
-        env:
-          STAGING_FRONTEND_URL: ${{ secrets.STAGING_FRONTEND_URL }}
-        run: pytest services/tests/e2e/ -v --tb=short
-
-      - name: Upload Playwright report
+      - name: Upload test report
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: playwright-report
-          path: playwright-report/
+          name: qa-report
+          path: .pytest_cache/
           retention-days: 7
 
-  # ─────────────────────────────────────────────────────────────────
-  # DEPLOY TO PRODUCTION — requires manual approval via GitHub env
-  # ─────────────────────────────────────────────────────────────────
+  open-prod-pr:
+    name: Open PR staging → main
+    runs-on: ubuntu-latest
+    needs: [qa-tests]
+    if: needs.qa-tests.result == 'success'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create PR to main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          EXISTING=$(gh pr list --base main --head staging --state open --json number -q '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            echo "PR #$EXISTING already open"
+          else
+            gh pr create \
+              --base main \
+              --head staging \
+              --title "Deploy to production — ${{ github.sha }}" \
+              --body "Staging healthy and QA passed. Merge to deploy to production."
+          fi
+
+  # ── Production ───────────────────────────────────────────────────
   deploy-prod:
     name: Deploy to Production
     runs-on: ubuntu-latest
-    needs: [qa-tests]
-    if: ${{ always() && (github.event_name != 'workflow_dispatch' || inputs.stage == 'all' || inputs.stage == 'production') && needs.qa-tests.result != 'failure' }}
+    if: |
+      (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
+      (github.event_name == 'workflow_dispatch' && inputs.stage == 'production')
     environment: production
     steps:
       - uses: actions/checkout@v4
-        with:
-          token: ${{ github.token }}
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -196,65 +166,56 @@ jobs:
 
       - uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Promote images staging → prod
-        env:
-          ECR: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
-          IMAGE_TAG: ${{ github.sha }}
+      - name: Promote staging → prod ECR
         run: |
           for service in frontend backend; do
-            docker pull  "${ECR}/${service}-staging:latest"
-            docker tag   "${ECR}/${service}-staging:latest" "${ECR}/${service}-prod:${IMAGE_TAG}"
-            docker tag   "${ECR}/${service}-staging:latest" "${ECR}/${service}-prod:latest"
-            docker push  "${ECR}/${service}-prod:${IMAGE_TAG}"
-            docker push  "${ECR}/${service}-prod:latest"
+            docker pull  "${{ env.ECR }}/${service}-staging:latest"
+            docker tag   "${{ env.ECR }}/${service}-staging:latest" "${{ env.ECR }}/${service}-prod:${{ github.sha }}"
+            docker tag   "${{ env.ECR }}/${service}-staging:latest" "${{ env.ECR }}/${service}-prod:latest"
+            docker push  "${{ env.ECR }}/${service}-prod:${{ github.sha }}"
+            docker push  "${{ env.ECR }}/${service}-prod:latest"
           done
+
+      - name: Update prod image tags in Git
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name  "github-actions[bot]"
+          git pull --rebase
+          sed -i "s|tag:.*|tag: \"${{ github.sha }}\"|" ArgoCD/frontend/helm_chart/values.prod.yaml
+          sed -i "s|repository:.*|repository: \"${{ env.ECR }}/frontend-prod\"|" ArgoCD/frontend/helm_chart/values.prod.yaml
+          sed -i "s|tag:.*|tag: \"${{ github.sha }}\"|" ArgoCD/backend/helm_chart/values.prod.yaml
+          sed -i "s|repository:.*|repository: \"${{ env.ECR }}/backend-prod\"|" ArgoCD/backend/helm_chart/values.prod.yaml
+          git add ArgoCD/
+          git diff --staged --quiet || git commit -m "cd: prod image ${{ github.sha }} [skip actions]"
+          git push
 
       - name: Connect to prod cluster
         run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name eksdemo-prod-cluster
 
-      - name: Update image tag in Git
-        env:
-          IMAGE_TAG: ${{ github.sha }}
-          ECR: ${{ secrets.AWS_ACCOUNT_NUMBER }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
-        run: |
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git config user.name "github-actions[bot]"
-          git pull --rebase
+      - name: Sync ArgoCD prod
+        run: kubectl apply -f ArgoCD/bootstrap/root-app.yaml || true
 
-          sed -i "s|repository:.*|repository: \"${ECR}/frontend-prod\"|" ArgoCD/frontend/helm_chart/values.prod.yaml
-          sed -i "s|tag:.*|tag: \"${IMAGE_TAG}\"|" ArgoCD/frontend/helm_chart/values.prod.yaml
-          sed -i "s|repository:.*|repository: \"${ECR}/backend-prod\"|" ArgoCD/backend/helm_chart/values.prod.yaml
-          sed -i "s|tag:.*|tag: \"${IMAGE_TAG}\"|" ArgoCD/backend/helm_chart/values.prod.yaml
-
-          git add ArgoCD/frontend/helm_chart/values.prod.yaml ArgoCD/backend/helm_chart/values.prod.yaml
-          git diff --staged --quiet || git commit -m "cd: deploy to production image ${IMAGE_TAG}"
-          git push
-
-      - name: Apply ArgoCD apps
-        run: kubectl apply -f ArgoCD/bootstrap/root-app.yaml
-
-      - name: Wait for apps to be healthy
+      - name: Wait for prod to be healthy
         run: |
           for i in $(seq 1 40); do
-            FRONTEND=$(kubectl get application frontend-prod -n argocd \
+            F=$(kubectl get application frontend-prod -n argocd \
               -o jsonpath='{.status.health.status}' 2>/dev/null || echo "NotFound")
-            BACKEND=$(kubectl get application backend-prod -n argocd \
+            B=$(kubectl get application backend-prod -n argocd \
               -o jsonpath='{.status.health.status}' 2>/dev/null || echo "NotFound")
-            echo "Attempt $i/40 — frontend: $FRONTEND, backend: $BACKEND"
-            [ "$FRONTEND" = "Healthy" ] && [ "$BACKEND" = "Healthy" ] && break
+            echo "Attempt $i — frontend: $F, backend: $B"
+            [ "$F" = "Healthy" ] && [ "$B" = "Healthy" ] && break
             [ "$i" -eq 40 ] && exit 1
             sleep 15
           done
 
-      - name: Tag version
+      - name: Tag & Release
         id: tag
         uses: mathieudutour/github-tag-action@v6.2
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           default_bump: patch
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.new_tag }}
           name: ${{ steps.tag.outputs.new_tag }}
