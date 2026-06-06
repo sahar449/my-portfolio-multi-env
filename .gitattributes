@@ -1,0 +1,2 @@
+# Workflow files: always take the incoming branch version on merge conflicts
+.github/workflows/** merge=ours
