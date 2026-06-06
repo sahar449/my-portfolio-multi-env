@@ -11,8 +11,10 @@ spec:
               elements:
                 - env: staging
                   cluster: eksdemo-staging-cluster
+                  branch: staging
                 - env: prod
                   cluster: in-cluster
+                  branch: main
           - list:
               elements:
                 - service: frontend
@@ -29,7 +31,7 @@ spec:
       project: default
       source:
         repoURL: https://github.com/sahar449/my-portfolio-multi-env.git
-        targetRevision: HEAD
+        targetRevision: '{{branch}}'
         path: 'ArgoCD/{{service}}/helm_chart'
         helm:
           valueFiles:
