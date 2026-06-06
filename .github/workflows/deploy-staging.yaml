@@ -5,6 +5,11 @@ on:
     branches: [staging]
     paths: ['services/**']
   workflow_dispatch:
+    inputs:
+      image_sha:
+        description: "Dev image SHA to promote to staging"
+        required: false
+        default: ""
 
 concurrency:
   group: deploy-staging
@@ -38,8 +43,14 @@ jobs:
 
       - name: Promote dev → staging ECR
         run: |
-          IMAGE_TAG=$(grep "tag:" ArgoCD/frontend/helm_chart/values.staging.yaml \
-            | head -1 | sed 's/.*tag: //;s/"//g')
+          IMAGE_TAG="${{ inputs.image_sha }}"
+          if [ -z "$IMAGE_TAG" ]; then
+            IMAGE_TAG=$(grep "tag:" ArgoCD/frontend/helm_chart/values.staging.yaml \
+              | head -1 | sed 's/.*tag: //;s/"//g;s/latest//')
+          fi
+          if [ -z "$IMAGE_TAG" ] || [ "$IMAGE_TAG" = "latest" ]; then
+            IMAGE_TAG="latest"
+          fi
           echo "Promoting image tag: $IMAGE_TAG"
           for service in frontend backend; do
             docker pull  "${{ env.ECR }}/${service}-dev:${IMAGE_TAG}"
