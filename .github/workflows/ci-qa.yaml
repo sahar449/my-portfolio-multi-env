@@ -44,8 +44,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Lint
-        working-directory: services/frontend
-        run: python -m ruff check .
+        run: pip install ruff==0.9.10 && python -m ruff check services/frontend/
 
       - name: Run unit tests
         working-directory: services/frontend
@@ -68,8 +67,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Lint
-        working-directory: services/backend
-        run: python -m ruff check .
+        run: pip install ruff==0.9.10 && python -m ruff check services/backend/
 
       - name: Run unit tests
         working-directory: services/backend
@@ -137,12 +135,6 @@ jobs:
         run: |
           GH_TOKEN="${GH_TOKEN:-$FALLBACK_TOKEN}"
           export GH_TOKEN
-
-          AHEAD=$(gh api repos/${{ github.repository }}/compare/staging...$HEAD --jq '.ahead_by')
-          if [ "$AHEAD" -eq 0 ]; then
-            echo "No commits ahead of staging — skipping PR"
-            exit 0
-          fi
 
           EXISTING=$(gh pr list --base staging --head "$HEAD" --state open --json number -q '.[0].number')
           if [ -n "$EXISTING" ]; then

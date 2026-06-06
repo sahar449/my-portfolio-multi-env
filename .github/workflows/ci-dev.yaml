@@ -52,8 +52,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Lint
-        working-directory: services/frontend
-        run: python -m ruff check .
+        run: pip install ruff==0.9.10 && python -m ruff check services/frontend/
 
       - name: Run unit tests
         working-directory: services/frontend
@@ -83,8 +82,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Lint
-        working-directory: services/backend
-        run: python -m ruff check .
+        run: pip install ruff==0.9.10 && python -m ruff check services/backend/
 
       - name: Run unit tests
         working-directory: services/backend
