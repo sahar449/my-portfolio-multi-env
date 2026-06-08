@@ -26,6 +26,9 @@ spec:
         helm:
           valueFiles:
             - values.prod.yaml
+          parameters:
+            - name: secrets.accountNumber
+              value: ""  # injected by CI from AWS_ACCOUNT_NUMBER secret
       destination:
         name: in-cluster
         namespace: default

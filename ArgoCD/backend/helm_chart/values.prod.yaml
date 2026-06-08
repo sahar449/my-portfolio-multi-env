@@ -33,7 +33,7 @@ secrets:
   providerClassName: rds-secret-provider
   mountPath: /mnt/rds-secret
   k8sSecretName: rds-credentials
-  accountNumber: "634647866665"
+  rdsSecretName: "rds-creds-prod"
 resources:
   requests:
     memory: 64Mi
