@@ -61,8 +61,8 @@ jobs:
           sed -i "s|repository:.*|repository: \"${{ env.ECR }}/frontend-prod\"|" ArgoCD/frontend/helm_chart/values.prod.yaml
           sed -i "s|tag:.*|tag: \"${{ github.sha }}\"|" ArgoCD/backend/helm_chart/values.prod.yaml
           sed -i "s|repository:.*|repository: \"${{ env.ECR }}/backend-prod\"|" ArgoCD/backend/helm_chart/values.prod.yaml
-          yq e ".secrets.accountNumber = \"${{ secrets.AWS_ACCOUNT_NUMBER }}\"" \
-            -i ArgoCD/backend/helm_chart/values.prod.yaml
+          yq e '(.spec.template.spec.source.helm.parameters[] | select(.name == "secrets.accountNumber")).value = "${{ secrets.AWS_ACCOUNT_NUMBER }}"' \
+            -i ArgoCD/apps/prod/portfolio-prod-appset.yaml
           git add ArgoCD/
           git diff --staged --quiet || git commit -m "cd: prod image ${{ github.sha }} [skip actions]"
           git push
