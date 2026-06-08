@@ -17,7 +17,7 @@ concurrency:
 
 permissions:
   id-token: write
-  contents: read
+  contents: write
   pull-requests: write
 
 env:
@@ -59,6 +59,23 @@ jobs:
             docker push  "${{ env.ECR }}/${service}-staging:${IMAGE_TAG}"
             docker push  "${{ env.ECR }}/${service}-staging:latest"
           done
+
+      - name: Install yq
+        run: |
+          wget -qO /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/download/v4.44.1/yq_linux_amd64
+          chmod +x /usr/local/bin/yq
+
+      - name: Inject account number into staging values
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name  "github-actions[bot]"
+          git pull --rebase
+          yq e ".secrets.accountNumber = \"${{ secrets.AWS_ACCOUNT_NUMBER }}\"" \
+            -i ArgoCD/backend/helm_chart/values.staging.yaml
+          git add ArgoCD/backend/helm_chart/values.staging.yaml
+          git diff --staged --quiet || git commit -m "cd: inject account number for staging [skip actions]"
+          git push
 
       - name: Connect to prod cluster (ArgoCD host)
         run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name eksdemo-prod-cluster

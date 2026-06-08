@@ -32,7 +32,6 @@ secrets:
   mountPath: /mnt/rds-secret
   k8sSecretName: rds-credentials
   rdsSecretName: "rds-creds-staging"
-  accountNumber: "634647866665"
 resources:
   requests:
     memory: 64Mi

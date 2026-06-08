@@ -46,6 +46,12 @@ jobs:
             docker push  "${{ env.ECR }}/${service}-prod:latest"
           done
 
+      - name: Install yq
+        run: |
+          wget -qO /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/download/v4.44.1/yq_linux_amd64
+          chmod +x /usr/local/bin/yq
+
       - name: Update prod image tags in Git
         run: |
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -55,6 +61,8 @@ jobs:
           sed -i "s|repository:.*|repository: \"${{ env.ECR }}/frontend-prod\"|" ArgoCD/frontend/helm_chart/values.prod.yaml
           sed -i "s|tag:.*|tag: \"${{ github.sha }}\"|" ArgoCD/backend/helm_chart/values.prod.yaml
           sed -i "s|repository:.*|repository: \"${{ env.ECR }}/backend-prod\"|" ArgoCD/backend/helm_chart/values.prod.yaml
+          yq e ".secrets.accountNumber = \"${{ secrets.AWS_ACCOUNT_NUMBER }}\"" \
+            -i ArgoCD/backend/helm_chart/values.prod.yaml
           git add ArgoCD/
           git diff --staged --quiet || git commit -m "cd: prod image ${{ github.sha }} [skip actions]"
           git push
