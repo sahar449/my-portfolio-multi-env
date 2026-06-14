@@ -1,0 +1,45 @@
+name: PR Tests (main)
+# Runs unit tests + lint on pull requests targeting main, so branch protection
+# can require them to pass before merging to production. Kept separate from
+# ci-dev so the existing dev flow is untouched.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test-frontend:
+    name: Test Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        working-directory: services/frontend
+        run: pip install -r requirements.txt
+      - name: Lint
+        run: pip install ruff==0.9.10 && python -m ruff check services/frontend/
+      - name: Run unit tests
+        working-directory: services/frontend
+        run: pytest tests/ -v
+
+  test-backend:
+    name: Test Backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        working-directory: services/backend
+        run: pip install -r requirements.txt
+      - name: Lint
+        run: pip install ruff==0.9.10 && python -m ruff check services/backend/
+      - name: Run unit tests
+        working-directory: services/backend
+        run: pytest tests/ -v
