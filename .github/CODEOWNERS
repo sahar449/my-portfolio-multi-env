@@ -1,0 +1,25 @@
+# CODEOWNERS — role-based required reviewers.
+#
+# When a PR changes files under a path below, GitHub requires an approving
+# review from that path's owner(s) (once branch protection has
+# "Require review from Code Owners" enabled).
+#
+# IMPORTANT: every @name here must be a REAL GitHub account that is a
+# collaborator with write access on this repo — otherwise GitHub ignores
+# the line. (On a personal repo you cannot use teams like @org/devops;
+# convert the repo to an Organization to use team handles instead.)
+
+# ── DevOps: infrastructure, GitOps, and CI/CD ──────────────────────────
+/infra/        @user-devops
+/ArgoCD/       @user-devops
+/.github/      @user-devops
+
+# ── Developers: application source code ────────────────────────────────
+/services/backend/    @user-developer1 @user-developer2
+/services/frontend/   @user-developer1 @user-developer2
+
+# ── QA: tests ──────────────────────────────────────────────────────────
+/services/tests/   @user-qa
+
+# ── Default owner for everything else ──────────────────────────────────
+*   @user-devops
