@@ -20,6 +20,11 @@ resource "aws_eks_cluster" "this" {
   role_arn = aws_iam_role.eks_cluster_role.arn
   version  = "1.34"
 
+  # API_AND_CONFIG_MAP is required for EKS access entries (admin_access_entries).
+  access_config {
+    authentication_mode = "API_AND_CONFIG_MAP"
+  }
+
   vpc_config {
     subnet_ids = var.private_subnet_ids
   }
@@ -27,7 +32,8 @@ resource "aws_eks_cluster" "this" {
   depends_on = [aws_iam_role.eks_cluster_role]
 
   lifecycle {
-    ignore_changes = [access_config]
+    # bootstrap_cluster_creator_admin_permissions is create-only; ignore drift on it.
+    ignore_changes = [access_config[0].bootstrap_cluster_creator_admin_permissions]
   }
 }
 
