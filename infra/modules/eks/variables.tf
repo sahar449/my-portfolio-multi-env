@@ -12,3 +12,9 @@ variable "public_subnet_ids" {
 
 variable "cluster_name" {}
 
+# IAM principal ARNs granted cluster-admin via EKS access entries.
+variable "admin_access_entries" {
+  type    = list(string)
+  default = []
+}
+

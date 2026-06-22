@@ -79,6 +79,7 @@ resource "aws_db_instance" "mysql" {
   engine_version    = "8.0.44"
   instance_class    = "db.t3.micro"
   allocated_storage = 20
+  storage_encrypted = true
 
   db_name  = var.DB_NAME
   username = var.DB_USER

@@ -31,6 +31,28 @@ resource "aws_eks_cluster" "this" {
   }
 }
 
+# Grant admin users cluster access declaratively (replaces the imperative
+# `aws eks create-access-entry` step that used to run in CI).
+resource "aws_eks_access_entry" "admin" {
+  for_each      = toset(var.admin_access_entries)
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = each.value
+  type          = "STANDARD"
+}
+
+resource "aws_eks_access_policy_association" "admin" {
+  for_each      = toset(var.admin_access_entries)
+  cluster_name  = aws_eks_cluster.this.name
+  principal_arn = each.value
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+
+  access_scope {
+    type = "cluster"
+  }
+
+  depends_on = [aws_eks_access_entry.admin]
+}
+
 resource "aws_iam_role" "node_group_role" {
   name = "${var.cluster_name}-nodegroup-role"
   assume_role_policy = jsonencode({

@@ -19,12 +19,18 @@ module "vpc" {
   name_prefix          = var.name_prefix
 }
 
+data "aws_caller_identity" "current" {}
+
 module "eks" {
   source             = "../../modules/eks"
   cluster_name       = var.cluster_name
   vpc_id             = module.vpc.vpc_id
   private_subnet_ids = module.vpc.private_subnet_ids
   public_subnet_ids  = module.vpc.public_subnet_ids
+
+  admin_access_entries = var.admin_username != "" ? [
+    "arn:aws:iam::${data.aws_caller_identity.current.account_id}:user/${var.admin_username}"
+  ] : []
 }
 
 module "iam" {

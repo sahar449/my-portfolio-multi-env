@@ -43,3 +43,9 @@ spec:
           selfHeal: true
         syncOptions:
           - CreateNamespace=false
+      # HPA owns replica count; don't let ArgoCD fight it (avoids constant OutOfSync).
+      ignoreDifferences:
+        - group: apps
+          kind: Deployment
+          jsonPointers:
+            - /spec/replicas
