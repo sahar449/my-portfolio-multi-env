@@ -33,6 +33,9 @@ secrets:
   providerClassName: rds-secret-provider
   mountPath: /mnt/rds-secret
   k8sSecretName: rds-credentials
+  # Secrets Manager object name. Overridden per env (rds-creds-staging / rds-creds-prod);
+  # base default keeps the chart renderable on its own.
+  rdsSecretName: rds-credentials
 resources:
   requests:
     memory: 64Mi
