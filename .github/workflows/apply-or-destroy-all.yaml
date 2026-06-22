@@ -179,19 +179,9 @@ jobs:
         run: terraform init -upgrade
       - name: Terraform Apply
         working-directory: infra/envs/staging
+        env:
+          TF_VAR_admin_username: ${{ secrets.AWS_USER }}
         run: terraform apply -auto-approve
-      - name: Grant admin user cluster access
-        run: |
-          aws eks create-access-entry \
-            --cluster-name eksdemo-staging-cluster \
-            --principal-arn arn:aws:iam::${{ secrets.AWS_ACCOUNT_NUMBER }}:user/${{ secrets.AWS_USER }} \
-            --region ${{ env.AWS_REGION }} || true
-          aws eks associate-access-policy \
-            --cluster-name eksdemo-staging-cluster \
-            --principal-arn arn:aws:iam::${{ secrets.AWS_ACCOUNT_NUMBER }}:user/${{ secrets.AWS_USER }} \
-            --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy \
-            --access-scope type=cluster \
-            --region ${{ env.AWS_REGION }} || true
 
   apply-prod:
     name: Apply Prod
@@ -214,19 +204,9 @@ jobs:
         run: terraform init -upgrade
       - name: Terraform Apply
         working-directory: infra/envs/production
+        env:
+          TF_VAR_admin_username: ${{ secrets.AWS_USER }}
         run: terraform apply -auto-approve
-      - name: Grant admin user cluster access
-        run: |
-          aws eks create-access-entry \
-            --cluster-name eksdemo-prod-cluster \
-            --principal-arn arn:aws:iam::${{ secrets.AWS_ACCOUNT_NUMBER }}:user/${{ secrets.AWS_USER }} \
-            --region ${{ env.AWS_REGION }} || true
-          aws eks associate-access-policy \
-            --cluster-name eksdemo-prod-cluster \
-            --principal-arn arn:aws:iam::${{ secrets.AWS_ACCOUNT_NUMBER }}:user/${{ secrets.AWS_USER }} \
-            --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy \
-            --access-scope type=cluster \
-            --region ${{ env.AWS_REGION }} || true
 
   trigger-deploy:
     name: Trigger Staging Deploy
